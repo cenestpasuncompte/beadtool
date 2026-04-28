@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>拼豆色号库存表 · 图片识别版</title>
+<style>
+  :root{
+    --bg:#fff7ee; --card:#ffffff; --ink:#4a2a1d; --muted:#8a6a5a;
+    --accent:#c55939; --accent2:#d18342; --line:#ead4c2; --ok:#2f8f5b; --bad:#c23b3b;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);
+    padding-bottom:env(safe-area-inset-bottom,0);
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:22px 16px}
+  h1{font-size:22px;margin:4px 0 8px;line-height:1.3}
+  h2{font-size:18px;margin:0 0 12px}
+  p{color:var(--muted);margin:0 0 18px;line-height:1.6;font-size:14px}
+  .grid{display:grid;grid-template-columns:1fr;gap:14px}
+  @media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 8px 20px rgba(74,42,29,.06)}
+  label{display:block;font-weight:650;margin:10px 0 6px;font-size:14px}
+  input,textarea,button{font:inherit}
+  input,textarea{
+    width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;
+    background:#fff;color:var(--ink);outline:none;
+    font-size:16px;
+    -webkit-appearance:none;
+    transition:border-color .15s;
+  }
+  input:focus,textarea:focus{border-color:var(--accent)}
+  input.error{border-color:var(--bad);animation:shake .3s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+  textarea{min-height:100px;resize:vertical}
+  button{
+    border:0;border-radius:12px;padding:12px 16px;
+    background:var(--accent);color:#fff;font-weight:700;cursor:pointer;
+    margin:8px 8px 0 0;
+    touch-action:manipulation;
+    min-height:44px;
+    -webkit-appearance:none;
+    user-select:none;
+    transition:opacity .1s;
+  }
+  button:active{opacity:.7}
+  button.secondary{background:var(--accent2)}
+  button.ghost{background:#f4e2d2;color:var(--ink)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:8px;align-items:center}
+  .row input{flex:1;min-width:0}
+  .row button{white-space:nowrap;flex-shrink:0;margin:0}
+  .btn-group{display:flex;flex-wrap:wrap;gap:0}
+
+  /* ── inventory display ── */
+  .inv-meta{display:flex;align-items:baseline;gap:10px;margin:10px 0 6px;flex-wrap:wrap}
+  .inv-total{font-size:13px;color:var(--muted)}
+  .prefix-badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .prefix-badge{
+    font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;
+    background:#f4e2d2;color:var(--ink);white-space:nowrap;cursor:pointer;
+    touch-action:manipulation;transition:background .1s;
+  }
+  .prefix-badge:active{background:var(--line)}
+  .search-result{font-size:13px;min-height:18px;margin-top:5px}
+  .search-result.ok{color:var(--ok)}
+  .search-result.bad{color:var(--bad)}
+  .groups{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+  .group{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fffaf5}
+  .group summary{
+    list-style:none;display:flex;align-items:center;gap:8px;
+    padding:9px 13px;cursor:pointer;user-select:none;touch-action:manipulation;
+    font-weight:700;
+  }
+  .group summary::-webkit-details-marker{display:none}
+  .group-letter{font-size:15px;color:var(--accent);min-width:22px}
+  .group-count{font-size:13px;color:var(--muted);font-weight:400}
+  .group-chevron{margin-left:auto;font-size:11px;color:var(--muted);transition:transform .2s;line-height:1}
+  details[open] .group-chevron{transform:rotate(180deg)}
+  .group-chips{
+    display:flex;flex-wrap:wrap;gap:6px;
+    padding:8px 12px 10px;
+    border-top:1px solid var(--line);
+  }
+  .chip{
+    display:inline-flex;align-items:center;gap:4px;
+    border:1px solid var(--line);background:#fff;
+    border-radius:999px;padding:5px 9px;font-size:13px;
+    transition:background .15s,border-color .15s;
+  }
+  .chip.hl{background:#fff3cd;border-color:#e6b800}
+  .x{
+    border:0;background:transparent;color:var(--bad);font-weight:800;cursor:pointer;
+    padding:0;margin:0;touch-action:manipulation;
+    width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+    font-size:15px;line-height:1;flex-shrink:0;
+  }
+  .empty-inv{font-size:13px;color:var(--muted);padding:10px 0}
+
+  /* ── result / misc ── */
+  .result{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+  @media(min-width:650px){.result{grid-template-columns:1fr 1fr}}
+  .box{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fffaf6}
+  .box h3{margin:0 0 8px;font-size:16px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)}
+  .list{line-height:2;word-break:break-word;font-size:14px}
+  .missing-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:3px 0;line-height:1.6}
+  .pack-warn{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap}
+  .pack-warn-high{background:#fde8e8;color:var(--bad)}
+  .pack-warn-mid{background:#fff3e0;color:#b85c00}
+  .pack-total{margin-top:8px;padding-top:6px;border-top:1px solid var(--line);font-size:13px;font-weight:700;color:var(--ink)}
+  .hint{font-size:13px;color:var(--muted);line-height:1.6;margin-top:6px}
+  .feedback{font-size:13px;line-height:1.6;margin-top:6px;min-height:18px;transition:opacity .2s}
+  .feedback.ok{color:var(--ok)}
+  .feedback.bad{color:var(--bad)}
+  .preview{max-width:100%;border:1px solid var(--line);border-radius:14px;margin-top:10px;display:none}
+  .progress{height:10px;background:#f2dfcf;border-radius:999px;overflow:hidden;margin-top:10px;display:none}
+  .bar{height:100%;width:0%;background:var(--accent2);transition:width .2s}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px}
+  .storage-warn{background:#fff3cd;border:1px solid #ffd97d;border-radius:12px;padding:10px 14px;font-size:13px;color:#7a5c00;margin-bottom:14px;display:none}
+  select{
+    width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+    background:#fff;color:var(--ink);outline:none;font-size:16px;cursor:pointer;
+    transition:border-color .15s;
+  }
+  select:focus{border-color:var(--accent)}
+  .ocr-found{
+    background:#f4ede6;border:1px solid var(--line);border-radius:10px;
+    padding:8px 12px;margin-top:8px;font-size:13px;display:none;
+  }
+  .ocr-found-label{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+  .ocr-found-codes{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.9;word-break:break-word}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="storage-warn" id="storageWarn">⚠ 无法访问本地存储，数据仅在当前页面有效，刷新后会丢失。</div>
+  <h1>拼豆色号库存表 · 图片识别版</h1>
+  <p>可以手动粘贴色号，也可以上传图纸底部那条"色号 data"。识别出来后会自动和库存对比。注意：图片识别靠 OCR，图越清楚越准，截图歪了就会翻车。</p>
+
+  <div class="grid">
+
+    <!-- ── inventory card ── -->
+    <section class="card">
+      <h2>我的现有色号</h2>
+
+      <label for="newColor">添加一个色号</label>
+      <div class="row">
+        <input id="newColor" placeholder="例如：H7 / F15 / E16 / A11"
+               autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" />
+        <button id="addBtn" type="button">添加</button>
+      </div>
+      <div class="feedback" id="addFeedback"></div>
+
+      <label for="bulkHave">批量导入</label>
+      <textarea id="bulkHave" placeholder="一行一个，或逗号、空格分隔。例如：&#10;H7 F15 E16 A11"></textarea>
+      <div class="btn-group">
+        <button id="bulkBtn" class="secondary" type="button">批量添加</button>
+        <button id="exportBtn" class="ghost" type="button">导出清单</button>
+        <button id="clearBtn" class="ghost" type="button">清空库存</button>
+      </div>
+
+      <!-- inventory display -->
+      <label for="searchColor">搜索色号</label>
+      <input id="searchColor" placeholder="输入色号，例如 H7…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" />
+      <div class="search-result" id="searchResult"></div>
+
+      <div class="inv-meta">
+        <span class="inv-total" id="count"></span>
+      </div>
+      <div class="prefix-badges" id="prefixBadges"></div>
+      <div class="groups" id="groups"></div>
+    </section>
+
+    <!-- ── check card ── -->
+    <section class="card">
+      <h2>检查图纸需求</h2>
+      <label for="needList">方式一：粘贴图纸需要的色号</label>
+      <textarea id="needList" class="mono" placeholder="例如：E1 E3 E11 E15 E16 E18 F7 F10 F11 F15 F19 F21 F25 H2 H7 M13"></textarea>
+      <div class="btn-group">
+        <button id="checkBtn" type="button">检查缺色</button>
+        <button id="clearNeedBtn" class="ghost" type="button">清空需求</button>
+      </div>
+
+      <label for="imageInput">方式二：上传图纸底部色号 data 图片</label>
+      <input id="imageInput" type="file" accept="image/*" />
+      <label for="ocrMode">识别模式</label>
+      <select id="ocrMode">
+        <option value="multi">多模式合并（推荐，适合深色块）</option>
+        <option value="normal">普通模式</option>
+        <option value="contrast">高对比度</option>
+        <option value="invert">反色（白字黑底）</option>
+      </select>
+      <img id="preview" class="preview" alt="预览图" />
+      <button id="ocrBtn" class="secondary" type="button">识别图片色号</button>
+      <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
+      <div class="hint" id="ocrStatus">第一次使用图片识别需要联网加载 OCR 库。加载后再识别。</div>
+
+      <label for="ocrText">OCR 识别原文（可手动修改）</label>
+      <textarea id="ocrText" class="mono" placeholder="识别出来的文字会出现在这里。"></textarea>
+      <button id="useOCRBtn" class="ghost" type="button">从识别原文提取色号</button>
+      <div class="ocr-found" id="ocrFound">
+        <div class="ocr-found-label">提取到的色号</div>
+        <div class="ocr-found-codes" id="ocrFoundCodes"></div>
+      </div>
+
+      <div class="result" id="result" style="display:none">
+        <div class="box">
+          <h3 class="ok">已有</h3>
+          <div class="list" id="haveResult"></div>
+        </div>
+        <div class="box">
+          <h3 class="bad">缺少</h3>
+          <div class="list" id="missingResult"></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+const KEY  = "bead_color_inventory_v2";
+const PACK = 200;
+
+function packWarning(count) {
+  if (count == null) return null;
+  const packs = Math.ceil(count / PACK);
+  if (count >= PACK) return { text: `需要超过1包（需${packs}包）`, cls: "pack-warn-high" };
+  if (count >= 150)  return { text: "接近1包，建议补充",           cls: "pack-warn-mid"  };
+  return null;
+}
+
+function storageSave(key, val) {
+  try { localStorage.setItem(key, val); }
+  catch(e) { document.getElementById("storageWarn").style.display = "block"; }
+}
+function storageLoad(key, fallback) {
+  try { const v = localStorage.getItem(key); return v !== null ? v : fallback; }
+  catch(e) { document.getElementById("storageWarn").style.display = "block"; return fallback; }
+}
+
+let colors = JSON.parse(storageLoad(KEY, "[]"));
+let uploadedImage = null;
+
+function normalize(s) {
+  return String(s).trim().replace(/\s+/g, "").toUpperCase();
+}
+function splitInput(text) {
+  return text.split(/[\n,，、;；\s]+/).map(normalize).filter(Boolean);
+}
+// Applies OCR corrections to a single stripped token. Returns corrected code or null.
+function correctCode(tok) {
+  const t = tok.replace(/[\s\-]/g, "").toUpperCase();
+  const m = t.match(/^([A-Z]{1,2})([A-Z0-9]{1,4})$/);
+  if (!m) return null;
+  let letters = m[1], rest = m[2];
+  // Two-letter prefix where 2nd char is L or I → OCR misread of digit 1
+  // e.g. AL6 → A16,  EI5 → E15
+  if (letters.length === 2 && (letters[1] === "L" || letters[1] === "I")) {
+    rest = "1" + rest;
+    letters = letters[0];
+  }
+  // Fix numeric portion only — never touches the letter prefix
+  const fixedRest = rest.replace(/L/g, "1").replace(/I/g, "1").replace(/O/g, "0");
+  const code = letters + fixedRest;
+  return /^[A-Z]\d{1,3}$/.test(code) ? code : null;
+}
+function extractCodes(text) {
+  return extractCodesWithMeta(text).codes;
+}
+function extractCodesWithMeta(text) {
+  const raw = String(text).toUpperCase().replace(/[|]/g, "I");
+  const candidates = raw.match(/\b[A-Z]{1,2}[\s\-]?[A-Z0-9]{1,4}\b/g) || [];
+  const correctedSet = new Set();
+  const processed = candidates.map(tok => {
+    const orig = tok.replace(/[\s\-]/g, "");
+    const code = correctCode(orig);
+    if (!code) return null;
+    if (orig !== code) correctedSet.add(code);
+    return code;
+  }).filter(Boolean);
+  const codes = [...new Set(processed)]
+    .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", {numeric: true}));
+  const correctedCount = codes.filter(c => correctedSet.has(c)).length;
+  let warning = null;
+  if (codes.length > 0 && correctedCount > 0) {
+    warning = correctedCount / codes.length >= 0.3
+      ? `⚠ 置信度偏低：${correctedCount}/${codes.length} 个色号经 OCR 纠错，建议核查图片清晰度。`
+      : `已自动纠正 ${correctedCount} 个 OCR 误读（L→1、I→1、O→0）。`;
+  }
+  return { codes, warning };
+}
+// Extracts [{code, count}] from text. count is null when no parenthesised number follows.
+// Ignores bare numbers not directly attached to a color code.
+function parseCodesWithCounts(text) {
+  const raw = String(text).toUpperCase().replace(/[|]/g, "I");
+  const seen = new Set();
+  const items = [];
+  const correctedSet = new Set();
+
+  // Pass 1: code immediately followed by (N) — the N is the bead count
+  const pairRe = /\b([A-Z]{1,2}[\s\-]?[A-Z0-9]{1,4})\s*\((\d{1,5})\)/g;
+  let m;
+  while ((m = pairRe.exec(raw)) !== null) {
+    const orig = m[1].replace(/[\s\-]/g, "");
+    const code = correctCode(orig);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    if (orig !== code) correctedSet.add(code);
+    items.push({ code, count: parseInt(m[2], 10) });
+  }
+
+  // Pass 2: standalone codes not already captured above
+  const candidates = raw.match(/\b[A-Z]{1,2}[\s\-]?[A-Z0-9]{1,4}\b/g) || [];
+  candidates.forEach(tok => {
+    const orig = tok.replace(/[\s\-]/g, "");
+    const code = correctCode(orig);
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    if (orig !== code) correctedSet.add(code);
+    items.push({ code, count: null });
+  });
+
+  items.sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
+
+  const correctedCount = items.filter(i => correctedSet.has(i.code)).length;
+  let warning = null;
+  if (items.length > 0 && correctedCount > 0) {
+    warning = correctedCount / items.length >= 0.3
+      ? `⚠ 置信度偏低：${correctedCount}/${items.length} 个色号经 OCR 纠错，建议核查图片清晰度。`
+      : `已自动纠正 ${correctedCount} 个 OCR 误读（L→1、I→1、O→0）。`;
+  }
+  return { items, warning };
+}
+function getPrefix(c) {
+  return c.match(/^[A-Z]+/)?.[0] || "?";
+}
+function save() {
+  colors = [...new Set(colors.map(normalize).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", {numeric: true}));
+  storageSave(KEY, JSON.stringify(colors));
+  render();
+}
+
+function render() {
+  // build prefix → colors map
+  const groups = {};
+  colors.forEach(c => {
+    const p = getPrefix(c);
+    (groups[p] = groups[p] || []).push(c);
+  });
+  const prefixes = Object.keys(groups).sort();
+
+  // total count
+  document.getElementById("count").textContent =
+    colors.length ? `共 ${colors.length} 个色号` : "暂无色号";
+
+  // prefix summary badges
+  const badgesEl = document.getElementById("prefixBadges");
+  badgesEl.innerHTML = "";
+  prefixes.forEach(p => {
+    const span = document.createElement("span");
+    span.className = "prefix-badge";
+    span.textContent = `${p} · ${groups[p].length}`;
+    span.title = `跳转到 ${p} 组`;
+    span.addEventListener("click", () => {
+      const det = document.getElementById("group-" + p);
+      if (det) { det.open = true; det.scrollIntoView({behavior:"smooth", block:"nearest"}); }
+    });
+    badgesEl.appendChild(span);
+  });
+
+  // collapsible groups
+  const groupsEl = document.getElementById("groups");
+  // remember which groups were open before re-render
+  const openState = {};
+  groupsEl.querySelectorAll("details").forEach(d => {
+    openState[d.id] = d.open;
+  });
+  groupsEl.innerHTML = "";
+
+  if (!colors.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-inv";
+    empty.textContent = "还没有色号，先添加几个吧。";
+    groupsEl.appendChild(empty);
+    return;
+  }
+
+  prefixes.forEach(p => {
+    const det = document.createElement("details");
+    det.className = "group";
+    det.id = "group-" + p;
+    // default: open if ≤3 prefixes, or if previously open
+    const prevOpen = openState["group-" + p];
+    det.open = prevOpen !== undefined ? prevOpen : prefixes.length <= 3;
+
+    const sumEl = document.createElement("summary");
+    const letter = document.createElement("span");
+    letter.className = "group-letter";
+    letter.textContent = p;
+    const cnt = document.createElement("span");
+    cnt.className = "group-count";
+    cnt.textContent = `${groups[p].length} 个`;
+    const chev = document.createElement("span");
+    chev.className = "group-chevron";
+    chev.textContent = "▼";
+    sumEl.appendChild(letter);
+    sumEl.appendChild(cnt);
+    sumEl.appendChild(chev);
+
+    const chipsDiv = document.createElement("div");
+    chipsDiv.className = "group-chips";
+    groups[p].forEach(c => {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.dataset.color = c;
+      const txt = document.createElement("span");
+      txt.textContent = c;
+      const btn = document.createElement("button");
+      btn.className = "x";
+      btn.type = "button";
+      btn.title = "删除";
+      btn.textContent = "×";
+      btn.addEventListener("click", () => { colors = colors.filter(x => x !== c); save(); });
+      chip.appendChild(txt);
+      chip.appendChild(btn);
+      chipsDiv.appendChild(chip);
+    });
+
+    det.appendChild(sumEl);
+    det.appendChild(chipsDiv);
+    groupsEl.appendChild(det);
+  });
+
+  // re-apply any active search highlight
+  const searchVal = normalize(document.getElementById("searchColor").value);
+  if (searchVal) applyHighlight(searchVal);
+}
+
+function applyHighlight(val) {
+  document.querySelectorAll(".chip").forEach(chip => {
+    chip.classList.toggle("hl", chip.dataset.color === val);
+  });
+}
+
+function searchColor() {
+  const val = normalize(document.getElementById("searchColor").value);
+  const el = document.getElementById("searchResult");
+  // clear all highlights first
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("hl"));
+  if (!val) { el.textContent = ""; el.className = "search-result"; return; }
+
+  if (colors.includes(val)) {
+    el.textContent = `✓ 已有 ${val}`;
+    el.className = "search-result ok";
+    // expand and highlight
+    const p = getPrefix(val);
+    const det = document.getElementById("group-" + p);
+    if (det) det.open = true;
+    applyHighlight(val);
+  } else {
+    el.textContent = `✗ 没有 ${val}`;
+    el.className = "search-result bad";
+  }
+}
+
+function setFeedback(msg, type) {
+  const el = document.getElementById("addFeedback");
+  el.textContent = msg;
+  el.className = "feedback " + (type || "");
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 3000);
+}
+function addColor() {
+  const input = document.getElementById("newColor");
+  const c = normalize(input.value);
+  if (!c) {
+    input.classList.add("error");
+    setTimeout(() => input.classList.remove("error"), 400);
+    setFeedback("请输入色号。", "bad");
+    input.focus();
+    return;
+  }
+  if (colors.includes(c)) {
+    setFeedback(`${c} 已经在库存里了。`, "bad");
+    return;
+  }
+  colors.push(c);
+  input.value = "";
+  save();
+  setFeedback(`已添加 ${c}。`, "ok");
+}
+function bulkAdd() {
+  const area = document.getElementById("bulkHave");
+  const incoming = splitInput(area.value);
+  if (!incoming.length) { setFeedback("没有检测到色号，请检查输入。", "bad"); return; }
+
+  const existing = new Set(colors);
+  const fresh = [];
+  const dupes = [];
+  incoming.forEach(c => {
+    if (existing.has(c)) {
+      dupes.push(c);
+    } else {
+      fresh.push(c);
+      existing.add(c); // also dedup within the incoming list itself
+    }
+  });
+
+  if (!fresh.length) {
+    setFeedback(`全部 ${dupes.length} 个色号已在库存中，未新增。`, "bad");
+    return;
+  }
+
+  colors.push(...fresh);
+  area.value = "";
+  save();
+
+  if (dupes.length) {
+    setFeedback(`新增 ${fresh.length} 个，跳过 ${dupes.length} 个重复。`, "ok");
+  } else {
+    setFeedback(`批量添加完成，新增 ${fresh.length} 个，当前共 ${colors.length} 个色号。`, "ok");
+  }
+}
+function checkNeed() {
+  const { items } = parseCodesWithCounts(document.getElementById("needList").value);
+  if (!items.length) return;
+  compare(items);
+}
+function compare(items) {
+  const haveSet = new Set(colors);
+  const have    = items.filter(x =>  haveSet.has(x.code));
+  const missing = items.filter(x => !haveSet.has(x.code));
+  const fmt = ({ code, count }) => count != null ? `${code} (${count})` : code;
+
+  document.getElementById("result").style.display = "grid";
+  document.getElementById("haveResult").textContent = have.length ? have.map(fmt).join("、") : "没有匹配到。";
+
+  const missingEl = document.getElementById("missingResult");
+  missingEl.innerHTML = "";
+
+  if (!missing.length) {
+    missingEl.textContent = "没有缺色，购物车暂时逃过一劫。";
+    return;
+  }
+
+  let packSum = 0;
+  let hasCount = false;
+
+  missing.forEach(({ code, count }) => {
+    const row = document.createElement("div");
+    row.className = "missing-row";
+
+    const label = document.createElement("span");
+    label.textContent = count != null ? `${code} (${count})` : code;
+    row.appendChild(label);
+
+    if (count != null) {
+      hasCount = true;
+      packSum += Math.ceil(count / PACK);
+      const w = packWarning(count);
+      if (w) {
+        const badge = document.createElement("span");
+        badge.className = "pack-warn " + w.cls;
+        badge.textContent = w.text;
+        row.appendChild(badge);
+      }
+    }
+
+    missingEl.appendChild(row);
+  });
+
+  if (hasCount) {
+    const total = document.createElement("div");
+    total.className = "pack-total";
+    total.textContent = `合计约需 ${packSum} 包`;
+    missingEl.appendChild(total);
+  }
+}
+function useOCRText() {
+  const { items, warning } = parseCodesWithCounts(document.getElementById("ocrText").value);
+  document.getElementById("needList").value = items.map(i => i.count != null ? `${i.code} (${i.count})` : i.code).join("  ");
+  compare(items);
+  showOCRExtracted(items);
+  const base = `已提取 ${items.length} 个色号：${items.map(i => i.code).join("、")}`;
+  document.getElementById("ocrStatus").textContent = warning ? base + "  " + warning : base;
+}
+function exportList() {
+  const blob = new Blob([colors.join("\n")], {type: "text/plain;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "拼豆色号库存.txt"; a.click();
+  URL.revokeObjectURL(url);
+}
+function clearAll() {
+  if (confirm("确定清空全部库存色号吗？")) { colors = []; save(); }
+}
+
+function preprocessImage(file, mode) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = img.width < 1000 ? 3 : 2;
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        let g = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+        if (mode === "contrast") {
+          g = Math.max(0, Math.min(255, (g - 128) * 2.5 + 128));
+        } else if (mode === "invert") {
+          g = g > 128 ? 0 : 255;
+        }
+        d[i] = d[i+1] = d[i+2] = g;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      canvas.toBlob(blob => resolve(blob), "image/png");
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function showOCRExtracted(items) {
+  const panel = document.getElementById("ocrFound");
+  const codesEl = document.getElementById("ocrFoundCodes");
+  if (!items.length) { panel.style.display = "none"; return; }
+  codesEl.textContent = items.map(i => i.count != null ? `${i.code}(${i.count})` : i.code).join("  ");
+  panel.style.display = "block";
+}
+
+async function runOCR() {
+  if (!uploadedImage) { alert("先上传图片。"); return; }
+  if (typeof Tesseract === "undefined") { alert("OCR 库还没加载成功。请联网后刷新页面。"); return; }
+  const btn = document.getElementById("ocrBtn");
+  const status = document.getElementById("ocrStatus");
+  const progress = document.getElementById("progress");
+  const bar = document.getElementById("bar");
+  const mode = document.getElementById("ocrMode").value;
+  btn.disabled = true;
+  progress.style.display = "block";
+  bar.style.width = "0%";
+
+  const runPass = async (source, label, p0, p1) => {
+    status.textContent = `正在识别（${label}）…`;
+    const { data } = await Tesseract.recognize(source, "eng", {
+      logger: m => {
+        if (m.status === "recognizing text") {
+          bar.style.width = (p0 + Math.round((m.progress || 0) * (p1 - p0))) + "%";
+        }
+      }
+    });
+    return data.text;
+  };
+
+  try {
+    let firstPassText = "";
+    const seen = new Set();
+    const allItems = [];
+    const mergeItems = newItems => {
+      newItems.forEach(item => {
+        if (!seen.has(item.code)) {
+          seen.add(item.code); allItems.push(item);
+        } else if (item.count != null) {
+          const idx = allItems.findIndex(x => x.code === item.code);
+          if (idx >= 0 && allItems[idx].count == null) allItems[idx].count = item.count;
+        }
+      });
+    };
+
+    if (mode === "multi") {
+      firstPassText = await runPass(uploadedImage, "普通", 0, 30);
+      mergeItems(parseCodesWithCounts(firstPassText).items);
+      mergeItems(parseCodesWithCounts(await runPass(await preprocessImage(uploadedImage, "contrast"), "高对比度", 30, 65)).items);
+      mergeItems(parseCodesWithCounts(await runPass(await preprocessImage(uploadedImage, "invert"), "反色", 65, 95)).items);
+      bar.style.width = "100%";
+    } else if (mode === "normal") {
+      firstPassText = await runPass(uploadedImage, "普通", 0, 100);
+      mergeItems(parseCodesWithCounts(firstPassText).items);
+    } else {
+      const blob = await preprocessImage(uploadedImage, mode);
+      firstPassText = await runPass(blob, mode === "contrast" ? "高对比度" : "反色", 0, 100);
+      mergeItems(parseCodesWithCounts(firstPassText).items);
+    }
+
+    allItems.sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
+    document.getElementById("ocrText").value = firstPassText;
+    document.getElementById("needList").value = allItems.map(i => i.count != null ? `${i.code} (${i.count})` : i.code).join("  ");
+    compare(allItems);
+    showOCRExtracted(allItems);
+    const passLabel = mode === "multi" ? "（3 次合并）" : "";
+    status.textContent = `识别完成${passLabel}，提取到 ${allItems.length} 个色号：${allItems.map(i => i.code).join("、")}`;
+  } catch(err) {
+    status.textContent = "识别失败：" + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("addBtn").addEventListener("click", addColor);
+document.getElementById("bulkBtn").addEventListener("click", bulkAdd);
+document.getElementById("exportBtn").addEventListener("click", exportList);
+document.getElementById("clearBtn").addEventListener("click", clearAll);
+document.getElementById("checkBtn").addEventListener("click", checkNeed);
+document.getElementById("clearNeedBtn").addEventListener("click", () => { document.getElementById("needList").value = ""; });
+document.getElementById("useOCRBtn").addEventListener("click", useOCRText);
+document.getElementById("ocrBtn").addEventListener("click", runOCR);
+document.getElementById("newColor").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addColor(); } });
+document.getElementById("searchColor").addEventListener("input", searchColor);
+document.getElementById("imageInput").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  uploadedImage = file;
+  const img = document.getElementById("preview");
+  img.src = URL.createObjectURL(file);
+  img.style.display = "block";
+  document.getElementById("ocrStatus").textContent = "图片已载入。建议只截底部色号 data 那一条，越清楚越好。";
+});
+
+render();
+</script>
+</body>
+</html>

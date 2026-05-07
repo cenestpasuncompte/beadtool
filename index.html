@@ -133,13 +133,65 @@
   }
   .ocr-found-label{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
   .ocr-found-codes{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.9;word-break:break-word}
+  .sync-bar{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;
+    align-items:center;gap:10px;
+  }
+  .sync-status{font-size:13px;display:flex;align-items:center;gap:5px;margin-left:auto}
+  .sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .sync-dot.local  {background:#aaa}
+  .sync-dot.ok     {background:var(--ok)}
+  .sync-dot.syncing{background:var(--accent2);animation:pulse 1s infinite}
+  .sync-dot.error  {background:var(--bad)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sync-bar input{flex:1;min-width:160px;margin:0}
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(74,42,29,.35);
+    display:flex;align-items:center;justify-content:center;
+    z-index:1000;padding:20px;
+  }
+  .modal-overlay[hidden]{display:none}
+  .modal{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;
+    padding:22px 20px;max-width:360px;width:100%;box-shadow:0 12px 32px rgba(74,42,29,.18);
+  }
+  .modal h3{margin:0 0 10px;font-size:16px}
+  .modal p{margin:0 0 18px;font-size:14px;color:var(--muted);line-height:1.6}
+  .modal-btns{display:flex;gap:8px;justify-content:flex-end}
+  .modal-warn{font-size:13px;color:#7a5c00;background:#fff3cd;border:1px solid #ffd97d;
+    border-radius:10px;padding:9px 12px;margin-top:10px;display:none;line-height:1.5}
 </style>
 </head>
 <body>
+<div id="genKeyModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3>生成新密钥</h3>
+    <p>生成新密钥会创建一份新的云端库存。当前库存不会被删除，但你需要保存旧密钥才能继续访问原来的数据。确定要生成新密钥吗？</p>
+    <div class="modal-btns">
+      <button id="genKeyCancelBtn" class="ghost"   type="button">取消</button>
+      <button id="genKeyConfirmBtn" class="secondary" type="button">确定生成</button>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="storage-warn" id="storageWarn">⚠ 无法访问本地存储，数据仅在当前页面有效，刷新后会丢失。</div>
   <h1>拼豆色号库存表 · 图片识别版</h1>
   <p>可以手动粘贴色号，也可以上传图纸底部那条"色号 data"。识别出来后会自动和库存对比。注意：图片识别靠 OCR，图越清楚越准，截图歪了就会翻车。</p>
+
+  <div class="sync-bar" id="syncBar">
+    <input id="syncKeyInput" placeholder="同步密钥（UUID）…"
+           autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+    <button id="genKeyBtn"     class="ghost"     type="button">生成新密钥</button>
+    <button id="connectBtn"    class="secondary" type="button">连接</button>
+    <button id="disconnectBtn" class="ghost"     type="button" style="display:none">断开</button>
+    <div class="sync-status">
+      <span class="sync-dot local" id="syncDot"></span>
+      <span id="syncLabel">仅本地</span>
+    </div>
+    <div class="modal-warn" id="genKeyWarn">新密钥已生成。请立即保存，否则换设备后无法找回这份库存。</div>
+  </div>
 
   <div class="grid">
 
@@ -224,9 +276,18 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 const KEY  = "bead_color_inventory_v2";
 const PACK = 200;
+
+// ── Supabase config — replace with your own project values ──
+const SUPABASE_URL      = "https://auleicfnwwpwkmxjzkks.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bGVpY2Zud3dwd2tteGp6a2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTM1MzMsImV4cCI6MjA5MjkyOTUzM30.EJDPMBeI8zepwrl7K6MPPoCVHp_lbWR3qr4jJhay-pg";
+const SYNC_KEY_STORAGE  = "bead_sync_key_v1";
+
+let supabaseClient = null;
+let syncKey = null;
 
 function packWarning(count) {
   if (count == null) return null;
@@ -346,6 +407,7 @@ function save() {
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN", {numeric: true}));
   storageSave(KEY, JSON.stringify(colors));
   render();
+  cloudSave(colors);
 }
 
 function render() {
@@ -710,6 +772,93 @@ async function runOCR() {
   }
 }
 
+// ── Cloud sync ──────────────────────────────────────────────────────────────
+
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById("syncDot");
+  const label = document.getElementById("syncLabel");
+  dot.className = "sync-dot " + state;
+  label.textContent = msg;
+}
+
+function setSyncConnectedUI(connected) {
+  document.getElementById("connectBtn").style.display    = connected ? "none"  : "";
+  document.getElementById("disconnectBtn").style.display = connected ? ""      : "none";
+}
+
+async function cloudLoad() {
+  if (!syncKey || !supabaseClient) return;
+  setSyncStatus("syncing", "同步中…");
+  try {
+    const { data, error } = await supabaseClient
+      .from("bead_inventories")
+      .select("colors")
+      .eq("sync_key", syncKey)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      const cloudColors = Array.isArray(data.colors) ? data.colors : [];
+      // Merge: union of cloud + local, neither side loses data
+      const merged = [...new Set([...cloudColors, ...colors.map(normalize)])].filter(Boolean);
+      colors = merged.sort((a, b) => a.localeCompare(b, "zh-Hans-CN", {numeric: true}));
+      storageSave(KEY, JSON.stringify(colors));
+      render();
+      await cloudSave(colors); // write merged result back
+    } else {
+      // No cloud row yet — push local data up to create it
+      await cloudSave(colors);
+    }
+  } catch(e) {
+    setSyncStatus("error", "同步失败，将使用本地数据");
+  }
+}
+
+async function cloudSave(colorArray) {
+  if (!syncKey || !supabaseClient) return;
+  setSyncStatus("syncing", "同步中…");
+  try {
+    const { error } = await supabaseClient
+      .from("bead_inventories")
+      .upsert({ sync_key: syncKey, colors: colorArray, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    setSyncStatus("ok", "云端已连接 · 已同步");
+  } catch(e) {
+    setSyncStatus("error", "同步失败，数据已保存本地");
+  }
+}
+
+async function connectCloud(key) {
+  if (!key) return;
+  syncKey = key;
+  try { localStorage.setItem(SYNC_KEY_STORAGE, key); } catch(e) {}
+  setSyncConnectedUI(true);
+  await cloudLoad();
+}
+
+function disconnectCloud() {
+  syncKey = null;
+  try { localStorage.removeItem(SYNC_KEY_STORAGE); } catch(e) {}
+  setSyncConnectedUI(false);
+  setSyncStatus("local", "仅本地");
+}
+
+function initCloud() {
+  if (SUPABASE_URL.includes("YOUR_PROJECT")) return; // placeholder not replaced yet
+  try {
+    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch(e) { return; }
+  let saved = null;
+  try { saved = localStorage.getItem(SYNC_KEY_STORAGE); } catch(e) {}
+  if (saved) {
+    document.getElementById("syncKeyInput").value = saved;
+    connectCloud(saved);
+  }
+}
+
+// ── Event listeners ──────────────────────────────────────────────────────────
+
 document.getElementById("addBtn").addEventListener("click", addColor);
 document.getElementById("bulkBtn").addEventListener("click", bulkAdd);
 document.getElementById("exportBtn").addEventListener("click", exportList);
@@ -720,6 +869,27 @@ document.getElementById("useOCRBtn").addEventListener("click", useOCRText);
 document.getElementById("ocrBtn").addEventListener("click", runOCR);
 document.getElementById("newColor").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addColor(); } });
 document.getElementById("searchColor").addEventListener("input", searchColor);
+document.getElementById("genKeyBtn").addEventListener("click", () => {
+  document.getElementById("genKeyWarn").style.display = "none";
+  document.getElementById("genKeyModal").removeAttribute("hidden");
+});
+document.getElementById("genKeyCancelBtn").addEventListener("click", () => {
+  document.getElementById("genKeyModal").setAttribute("hidden", "");
+});
+document.getElementById("genKeyConfirmBtn").addEventListener("click", () => {
+  document.getElementById("genKeyModal").setAttribute("hidden", "");
+  document.getElementById("syncKeyInput").value = crypto.randomUUID();
+  const warn = document.getElementById("genKeyWarn");
+  warn.style.display = "block";
+  setTimeout(() => { warn.style.display = "none"; }, 8000);
+});
+document.getElementById("genKeyModal").addEventListener("click", e => {
+  if (e.target === e.currentTarget) e.currentTarget.setAttribute("hidden", "");
+});
+document.getElementById("connectBtn").addEventListener("click", () => {
+  connectCloud(document.getElementById("syncKeyInput").value.trim());
+});
+document.getElementById("disconnectBtn").addEventListener("click", disconnectCloud);
 document.getElementById("imageInput").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -731,6 +901,7 @@ document.getElementById("imageInput").addEventListener("change", e => {
 });
 
 render();
+initCloud();
 </script>
 </body>
 </html>

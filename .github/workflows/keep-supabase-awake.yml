@@ -1,0 +1,17 @@
+name: Keep Supabase Awake
+
+on:
+  schedule:
+    - cron: "37 3 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase table
+        run: |
+          curl -sS \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/bead_inventories?select=sync_key&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"

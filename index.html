@@ -109,10 +109,35 @@
   .modal-calc{font-size:13px;color:var(--ok);font-weight:700;min-height:18px;margin-top:6px}
   .modal-err{font-size:13px;color:var(--bad);min-height:14px;margin-top:4px}
   .empty-inv{font-size:13px;color:var(--muted);padding:10px 0}
+  .low-summary{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:#fff5f5;border:1px solid #f5c6c6;border-radius:12px;
+    padding:9px 13px;margin-top:10px;
+  }
+  .low-summary-text{font-weight:700;color:var(--bad);font-size:13px}
+  .low-summary-none{color:var(--muted);font-size:13px;margin-top:10px}
+  .purchase-item{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    padding:9px 13px;border-bottom:1px solid var(--line);
+  }
+  .purchase-item:last-child{border-bottom:0}
+  .purchase-code{font-weight:700;font-size:14px}
+  .purchase-suggest{font-size:13px;color:var(--muted)}
+  .consume-preview{
+    background:#f9f4ef;border:1px solid var(--line);border-radius:10px;
+    padding:8px 12px;margin:10px 0 4px;max-height:200px;overflow-y:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;
+    line-height:1.9;
+  }
+  .consume-warn{
+    background:#fff3cd;border:1px solid #ffd97d;border-radius:10px;
+    padding:8px 12px;margin-top:8px;font-size:13px;color:#7a5c00;line-height:1.5;
+  }
 
   /* ── result / misc ── */
   .result{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
   @media(min-width:650px){.result{grid-template-columns:1fr 1fr}}
+  @media(min-width:950px){.result{grid-template-columns:1fr 1fr 1fr}}
   .box{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fffaf6}
   .box h3{margin:0 0 8px;font-size:16px}
   .ok{color:var(--ok)} .bad{color:var(--bad)}
@@ -162,9 +187,71 @@
   .modal-btns{display:flex;gap:8px;justify-content:flex-end}
   .modal-warn{font-size:13px;color:#7a5c00;background:#fff3cd;border:1px solid #ffd97d;
     border-radius:10px;padding:9px 12px;margin-top:10px;display:none;line-height:1.5}
+  /* ── history drawer ── */
+  .hist-backdrop{
+    position:fixed;inset:0;background:rgba(74,42,29,.3);z-index:998;
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  .hist-backdrop.open{opacity:1;pointer-events:auto}
+  .hist-drawer{
+    position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100vw;
+    background:var(--card);border-left:1px solid var(--line);
+    display:flex;flex-direction:column;z-index:999;
+    transform:translateX(100%);transition:transform .25s;
+    box-shadow:-4px 0 24px rgba(74,42,29,.12);
+  }
+  @media(max-width:700px){
+    .hist-drawer{
+      top:auto;left:0;right:0;bottom:0;width:100%;border-left:0;
+      border-top:1px solid var(--line);transform:translateY(100%);
+      height:70vh;border-radius:18px 18px 0 0;
+    }
+  }
+  .hist-drawer.open{transform:none}
+  .hist-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px;border-bottom:1px solid var(--line);flex-shrink:0;
+  }
+  .hist-head h3{margin:0;font-size:16px}
+  .hist-body{flex:1;overflow-y:auto;padding:10px 12px}
+  .hist-entry{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;background:#fffaf5}
+  .hist-entry summary{
+    list-style:none;padding:10px 13px;cursor:pointer;user-select:none;
+    touch-action:manipulation;display:flex;flex-direction:column;gap:3px;
+  }
+  .hist-entry summary::-webkit-details-marker{display:none}
+  .hist-entry-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .hist-entry-title{font-weight:700;font-size:14px}
+  .hist-entry-time{font-size:12px;color:var(--muted);white-space:nowrap}
+  .hist-entry-sub{font-size:12px;color:var(--muted)}
+  .hist-entry-body{
+    border-top:1px solid var(--line);padding:8px 13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12px;line-height:1.9;
+  }
+  .hist-empty{font-size:13px;color:var(--muted);text-align:center;padding:28px 0}
 </style>
 </head>
 <body>
+<div class="hist-backdrop" id="purchaseBackdrop"></div>
+<div class="hist-drawer" id="purchaseDrawer">
+  <div class="hist-head">
+    <h3>采购清单</h3>
+    <button type="button" class="ghost" id="copyPurchaseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">复制清单</button>
+    <button type="button" class="ghost" id="purchaseCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
+  </div>
+  <div class="hist-body" id="purchaseBody"></div>
+</div>
+
+<div class="hist-backdrop" id="histBackdrop"></div>
+<div class="hist-drawer" id="histDrawer">
+  <div class="hist-head">
+    <h3>历史记录</h3>
+    <button type="button" class="ghost" id="histCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
+  </div>
+  <div class="hist-body" id="histBody"></div>
+</div>
+
 <div id="addModal" class="modal-overlay" hidden>
   <div class="modal">
     <h3>添加库存</h3>
@@ -226,6 +313,19 @@
   </div>
 </div>
 
+<div id="consumeModal" class="modal-overlay" hidden>
+  <div class="modal">
+    <h3>确认消耗库存</h3>
+    <p style="margin-bottom:4px">确定要从库存中扣除本图纸所需颗粒吗？此操作会更新本地库存和云端库存。</p>
+    <div class="consume-preview" id="consumePreview"></div>
+    <div class="consume-warn" id="consumeWarn" style="display:none"></div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button type="button" class="ghost" id="consumeCancelBtn">取消</button>
+      <button type="button" id="consumeConfirmBtn">确认扣除</button>
+    </div>
+  </div>
+</div>
+
 <div id="genKeyModal" class="modal-overlay" hidden>
   <div class="modal">
     <h3>生成新密钥</h3>
@@ -261,7 +361,10 @@
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <h2 style="margin:0">我的色号库存</h2>
         <div style="display:flex;gap:6px;align-items:center">
-          <button id="exportBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">导出</button>
+          <button id="histBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">历史记录</button>
+          <button id="exportBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">导出备份</button>
+          <button id="importBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">导入备份</button>
+          <input type="file" id="importFileInput" accept=".json" style="display:none">
           <button id="clearBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">清空</button>
           <button id="openAddBtn" type="button" style="margin:0;padding:7px 14px;font-size:14px;min-height:36px">＋ 添加库存</button>
         </div>
@@ -272,6 +375,7 @@
       <div class="inv-meta" style="margin-top:10px">
         <span class="inv-total" id="count"></span>
       </div>
+      <div id="lowStockAlert"></div>
       <div class="prefix-badges" id="prefixBadges"></div>
       <div class="groups" id="groups"></div>
     </section>
@@ -283,6 +387,7 @@
       <textarea id="needList" class="mono" placeholder="例如：E1 E3 E11 E15 E16 E18 F7 F10 F11 F15 F19 F21 F25 H2 H7 M13"></textarea>
       <div class="btn-group">
         <button id="checkBtn" type="button">检查缺色</button>
+        <button id="consumeBtn" class="secondary" type="button" style="display:none">确认消耗库存</button>
         <button id="clearNeedBtn" class="ghost" type="button">清空需求</button>
       </div>
 
@@ -290,6 +395,10 @@
         <div class="box">
           <h3 class="ok">已有</h3>
           <div class="list" id="haveResult"></div>
+        </div>
+        <div class="box" id="insufficientBox" style="display:none">
+          <h3 style="color:#e67e22">库存不足</h3>
+          <div class="list" id="insufficientResult"></div>
         </div>
         <div class="box">
           <h3 class="bad">缺少</h3>
@@ -303,10 +412,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-const KEY      = "bead_color_inventory_v3";
-const KEY_V2   = "bead_color_inventory_v2";
-const PACK     = 200;
-const INV_PACK = 1000;
+const KEY                = "bead_color_inventory_v3";
+const KEY_V2             = "bead_color_inventory_v2";
+const HIST_KEY           = "bead_inv_history_v1";
+const PACK               = 200;
+const INV_PACK           = 1000;
+const LOW_STOCK_THRESHOLD = 200;
+const SAFE_STOCK          = 1000;
 
 // ── Supabase config — replace with your own project values ──
 const SUPABASE_URL      = "https://auleicfnwwpwkmxjzkks.supabase.co";
@@ -362,6 +474,7 @@ function migrate(raw) {
 })();
 
 let colors = migrate(JSON.parse(storageLoad(KEY, "[]")));
+let historyLog = JSON.parse(storageLoad(HIST_KEY, "[]"));
 
 function normalize(s) {
   return String(s).trim().replace(/\s+/g, "").toUpperCase();
@@ -483,7 +596,9 @@ function confirmAdd() {
     document.getElementById("dupModal").removeAttribute("hidden");
     return;
   }
-  colors.push({ code, packs, loose, total: packs * INV_PACK + loose });
+  const newTotal = packs * INV_PACK + loose;
+  colors.push({ code, packs, loose, total: newTotal });
+  addHistoryEntry("add", [{ code, delta: newTotal, before: 0, after: newTotal }]);
   save();
   closeAddModal();
 }
@@ -499,7 +614,9 @@ function dupAppend() {
   const newLoose = ex.loose + pendingDup.addLoose;
   const newPacks = ex.packs + pendingDup.addPacks + Math.floor(newLoose / INV_PACK);
   const finalLoose = newLoose % INV_PACK;
-  colors[idx] = { code: ex.code, packs: newPacks, loose: finalLoose, total: newPacks * INV_PACK + finalLoose };
+  const after = newPacks * INV_PACK + finalLoose;
+  colors[idx] = { code: ex.code, packs: newPacks, loose: finalLoose, total: after };
+  addHistoryEntry("add", [{ code: ex.code, delta: after - ex.total, before: ex.total, after }]);
   save();
   closeDupModal();
 }
@@ -508,7 +625,10 @@ function dupReplace() {
   const idx = colors.findIndex(r => r.code === pendingDup.code);
   if (idx < 0) { closeDupModal(); return; }
   const { addPacks: packs, addLoose: loose } = pendingDup;
-  colors[idx] = { code: pendingDup.code, packs, loose, total: packs * INV_PACK + loose };
+  const before = colors[idx].total;
+  const after = packs * INV_PACK + loose;
+  colors[idx] = { code: pendingDup.code, packs, loose, total: after };
+  addHistoryEntry("edit", [{ code: pendingDup.code, delta: after - before, before, after }]);
   save();
   closeDupModal();
 }
@@ -537,10 +657,143 @@ function confirmEdit() {
   if (idx < 0) { closeEditModal(); return; }
   const packs = parseInt(document.getElementById("editPacks").value) || 0;
   const loose = parseInt(document.getElementById("editLoose").value) || 0;
-  colors[idx] = { code: editingCode, packs, loose, total: packs * INV_PACK + loose };
+  const before = colors[idx].total;
+  const after = packs * INV_PACK + loose;
+  colors[idx] = { code: editingCode, packs, loose, total: after };
+  addHistoryEntry("edit", [{ code: editingCode, delta: after - before, before, after }]);
   save();
   closeEditModal();
 }
+
+// ── Purchase list ────────────────────────────────────────────────────────────
+
+function renderPurchaseList() {
+  const body = document.getElementById("purchaseBody");
+  body.innerHTML = "";
+  const lowItems = colors.filter(r => r.total < LOW_STOCK_THRESHOLD)
+    .sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
+  if (!lowItems.length) {
+    const el = document.createElement("div"); el.className = "hist-empty"; el.textContent = "暂无低库存色号。";
+    body.appendChild(el); return;
+  }
+  const list = document.createElement("div"); list.style.background = "#fffaf5";
+  lowItems.forEach(r => {
+    const needed = Math.max(0, SAFE_STOCK - r.total);
+    const packs = Math.ceil(needed / INV_PACK);
+    const item = document.createElement("div"); item.className = "purchase-item";
+    const codeEl = document.createElement("span"); codeEl.className = "purchase-code";
+    codeEl.textContent = `${r.code}（${r.total}粒）`;
+    const suggestEl = document.createElement("span"); suggestEl.className = "purchase-suggest";
+    suggestEl.textContent = `建议补货：${packs} 包`;
+    item.appendChild(codeEl); item.appendChild(suggestEl);
+    list.appendChild(item);
+  });
+  body.appendChild(list);
+}
+
+function openPurchaseDrawer() {
+  renderPurchaseList();
+  document.getElementById("purchaseDrawer").classList.add("open");
+  document.getElementById("purchaseBackdrop").classList.add("open");
+}
+function closePurchaseDrawer() {
+  document.getElementById("purchaseDrawer").classList.remove("open");
+  document.getElementById("purchaseBackdrop").classList.remove("open");
+}
+
+function copyPurchaseList() {
+  const lowItems = colors.filter(r => r.total < LOW_STOCK_THRESHOLD)
+    .sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
+  const text = lowItems.map(r => {
+    const packs = Math.ceil(Math.max(0, SAFE_STOCK - r.total) / INV_PACK);
+    return `${r.code}（${r.total}粒）建议补货：${packs}包`;
+  }).join("\n");
+  const btn = document.getElementById("copyPurchaseBtn");
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = "复制清单"; }, 2000);
+  }).catch(() => {
+    const ta = document.createElement("textarea"); ta.value = text;
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = "复制清单"; }, 2000);
+  });
+}
+
+// ── History ──────────────────────────────────────────────────────────────────
+
+function addHistoryEntry(type, items, note = "") {
+  historyLog.unshift({ id: Date.now() + Math.random().toString(36).slice(2,5), type, timestamp: new Date().toISOString(), items, note });
+  if (historyLog.length > 300) historyLog.length = 300;
+  storageSave(HIST_KEY, JSON.stringify(historyLog));
+  if (document.getElementById("histDrawer").classList.contains("open")) renderHistory();
+}
+
+function histTypeLabel(type) {
+  return { add: "添加库存", consume: "消耗库存", edit: "编辑库存", delete: "删除色号" }[type] || type;
+}
+
+function renderHistory() {
+  const body = document.getElementById("histBody");
+  body.innerHTML = "";
+  if (!historyLog.length) {
+    const el = document.createElement("div"); el.className = "hist-empty"; el.textContent = "暂无历史记录。";
+    body.appendChild(el); return;
+  }
+  historyLog.forEach(entry => {
+    const totalDelta = entry.items.reduce((s, i) => s + i.delta, 0);
+    const sign = totalDelta >= 0 ? "+" : "";
+    const timeStr = new Date(entry.timestamp).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+    const det = document.createElement("details"); det.className = "hist-entry";
+    const sum = document.createElement("summary");
+    const top = document.createElement("div"); top.className = "hist-entry-top";
+    const titleEl = document.createElement("span"); titleEl.className = "hist-entry-title"; titleEl.textContent = histTypeLabel(entry.type);
+    const timeEl = document.createElement("span"); timeEl.className = "hist-entry-time"; timeEl.textContent = timeStr;
+    const rightGrp = document.createElement("div");
+    rightGrp.style.cssText = "display:flex;align-items:center;gap:6px;flex-shrink:0";
+    rightGrp.appendChild(timeEl);
+    const delBtn = document.createElement("button");
+    delBtn.type = "button"; delBtn.className = "ghost";
+    delBtn.style.cssText = "font-size:11px;padding:2px 6px";
+    delBtn.textContent = "删除";
+    delBtn.addEventListener("click", e => { e.stopPropagation(); deleteHistoryEntry(entry.id); });
+    rightGrp.appendChild(delBtn);
+    top.appendChild(titleEl); top.appendChild(rightGrp);
+    const subEl = document.createElement("div"); subEl.className = "hist-entry-sub";
+    subEl.textContent = `共 ${sign}${totalDelta.toLocaleString()} 粒 · ${entry.items.length} 个色号`;
+    if (entry.note) subEl.textContent += ` · ${entry.note}`;
+    sum.appendChild(top); sum.appendChild(subEl);
+    const bdy = document.createElement("div"); bdy.className = "hist-entry-body";
+    entry.items.forEach(item => {
+      const s = item.delta >= 0 ? "+" : "";
+      const line = document.createElement("div");
+      line.textContent = `${item.code}  ${item.before.toLocaleString()} → ${item.after.toLocaleString()}  (${s}${item.delta.toLocaleString()})`;
+      bdy.appendChild(line);
+    });
+    det.appendChild(sum); det.appendChild(bdy);
+    body.appendChild(det);
+  });
+}
+
+function deleteHistoryEntry(id) {
+  if (!confirm("确定删除这条历史记录吗？这不会恢复或改变库存，只会删除记录本身。")) return;
+  historyLog = historyLog.filter(e => e.id !== id);
+  storageSave(HIST_KEY, JSON.stringify(historyLog));
+  renderHistory();
+}
+
+function openHistoryDrawer() {
+  renderHistory();
+  document.getElementById("histDrawer").classList.add("open");
+  document.getElementById("histBackdrop").classList.add("open");
+}
+function closeHistoryDrawer() {
+  document.getElementById("histDrawer").classList.remove("open");
+  document.getElementById("histBackdrop").classList.remove("open");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function save() {
   const seen = new Map();
@@ -561,6 +814,26 @@ function render() {
 
   document.getElementById("count").textContent =
     colors.length ? `共 ${colors.length} 个色号` : "暂无色号";
+
+  // low-stock summary
+  const lowItems = colors.filter(r => r.total < LOW_STOCK_THRESHOLD);
+  const alertEl = document.getElementById("lowStockAlert");
+  alertEl.innerHTML = "";
+  if (!colors.length) {
+    // nothing
+  } else if (!lowItems.length) {
+    alertEl.innerHTML = '<div class="low-summary-none">暂无低库存色号。</div>';
+  } else {
+    const row = document.createElement("div"); row.className = "low-summary";
+    const txt = document.createElement("span"); txt.className = "low-summary-text";
+    txt.textContent = `⚠ 低库存 ${lowItems.length} 个色号`;
+    const btn = document.createElement("button"); btn.type = "button";
+    btn.className = "ghost"; btn.style.cssText = "margin:0;padding:5px 12px;font-size:13px;min-height:32px";
+    btn.textContent = "查看采购清单";
+    btn.addEventListener("click", openPurchaseDrawer);
+    row.appendChild(txt); row.appendChild(btn);
+    alertEl.appendChild(row);
+  }
 
   const badgesEl = document.getElementById("prefixBadges");
   badgesEl.innerHTML = "";
@@ -605,7 +878,7 @@ function render() {
     const listDiv = document.createElement("div");
     listDiv.className = "inv-list";
     groups[p].forEach(r => {
-      const low = r.total < 200;
+      const low = r.total < LOW_STOCK_THRESHOLD;
       const row = document.createElement("div");
       row.className = "inv-row" + (low ? " low" : "");
       row.dataset.code = r.code;
@@ -620,7 +893,7 @@ function render() {
       editBtn.addEventListener("click", () => openEditModal(r.code));
       const delBtn = document.createElement("button");
       delBtn.className = "btn-icon del"; delBtn.type = "button"; delBtn.title = "删除"; delBtn.textContent = "×";
-      delBtn.addEventListener("click", () => { colors = colors.filter(x => x.code !== r.code); save(); });
+      delBtn.addEventListener("click", () => deleteItem(r.code));
       actions.appendChild(editBtn); actions.appendChild(delBtn);
 
       row.appendChild(codeEl); row.appendChild(countEl); row.appendChild(warnEl); row.appendChild(actions);
@@ -661,19 +934,119 @@ function searchColor() {
   }
 }
 
+let lastCheckedItems = [];
+
 function checkNeed() {
   const { items } = parseCodesWithCounts(document.getElementById("needList").value);
   if (!items.length) return;
+  lastCheckedItems = items;
   compare(items);
+  const hasCountItems = items.some(i => i.count != null);
+  const anyInsufficient = hasCountItems && items.some(i => {
+    if (i.count == null) return false;
+    const r = colors.find(r => r.code === i.code);
+    return r && r.total < i.count;
+  });
+  document.getElementById("consumeBtn").style.display = (hasCountItems && !anyInsufficient) ? "" : "none";
+}
+
+function consumeInventory() {
+  const itemsWithCount = lastCheckedItems.filter(i => i.count != null);
+  if (!itemsWithCount.length) return;
+
+  const missing = itemsWithCount.filter(i => !colors.some(r => r.code === i.code));
+  const insufficient = itemsWithCount.filter(i => {
+    const r = colors.find(r => r.code === i.code);
+    return r && r.total < i.count;
+  });
+  const hasProblems = missing.length > 0 || insufficient.length > 0;
+
+  // Build preview lines: only items that can actually be subtracted
+  const previewEl = document.getElementById("consumePreview");
+  previewEl.innerHTML = "";
+  itemsWithCount.forEach(({ code, count }) => {
+    const r = colors.find(r => r.code === code);
+    const actual = r ? Math.min(count, r.total) : 0;
+    const line = document.createElement("div");
+    line.textContent = `${code}  -${actual}`;
+    if (actual === 0) line.style.color = "var(--muted)";
+    previewEl.appendChild(line);
+  });
+
+  // Build warning if anything is off
+  const warnEl = document.getElementById("consumeWarn");
+  if (hasProblems) {
+    let msg = "部分色号库存不足，无法完整扣除。";
+    if (missing.length) msg += `\n缺少色号：${missing.map(i => i.code).join("、")}（将跳过）`;
+    if (insufficient.length) msg += `\n库存不足：${insufficient.map(i => {
+      const r = colors.find(r => r.code === i.code);
+      return `${i.code}（有 ${r.total} 粒，需 ${i.count} 粒）`;
+    }).join("、")}（将扣至 0）`;
+    warnEl.style.display = "";
+    warnEl.textContent = msg;
+    document.getElementById("consumeConfirmBtn").classList.add("secondary");
+    document.getElementById("consumeConfirmBtn").classList.remove(""); // keep accent for safe
+  } else {
+    warnEl.style.display = "none";
+    document.getElementById("consumeConfirmBtn").className = "";  // reset to default accent
+  }
+
+  document.getElementById("consumeModal").removeAttribute("hidden");
+}
+
+function closeConsumeModal() {
+  document.getElementById("consumeModal").setAttribute("hidden", "");
+}
+
+function confirmConsume() {
+  const itemsWithCount = lastCheckedItems.filter(i => i.count != null);
+  const histItems = [];
+  itemsWithCount.forEach(({ code, count }) => {
+    const idx = colors.findIndex(r => r.code === code);
+    if (idx < 0) return;
+    const r = colors[idx];
+    const after = Math.max(0, r.total - count);
+    histItems.push({ code, delta: after - r.total, before: r.total, after });
+    const newPacks = Math.floor(after / INV_PACK);
+    const newLoose = after % INV_PACK;
+    colors[idx] = { code: r.code, packs: newPacks, loose: newLoose, total: after };
+  });
+  if (histItems.length) addHistoryEntry("consume", histItems);
+  save();
+  closeConsumeModal();
 }
 function compare(items) {
-  const haveSet = new Set(colors.map(r => r.code));
-  const have    = items.filter(x =>  haveSet.has(x.code));
-  const missing = items.filter(x => !haveSet.has(x.code));
   const fmt = ({ code, count }) => count != null ? `${code} (${count})` : code;
 
+  const enough = [], insufficient = [], missing = [];
+  items.forEach(item => {
+    const r = colors.find(x => x.code === item.code);
+    if (!r) {
+      missing.push(item);
+    } else if (item.count != null && r.total < item.count) {
+      insufficient.push({ ...item, have: r.total });
+    } else {
+      enough.push(item);
+    }
+  });
+
   document.getElementById("result").style.display = "grid";
-  document.getElementById("haveResult").textContent = have.length ? have.map(fmt).join("、") : "没有匹配到。";
+  document.getElementById("haveResult").textContent = enough.length ? enough.map(fmt).join("、") : "没有匹配到。";
+
+  const insufficientBox = document.getElementById("insufficientBox");
+  const insufficientEl  = document.getElementById("insufficientResult");
+  insufficientEl.innerHTML = "";
+  if (insufficient.length) {
+    insufficientBox.style.display = "";
+    insufficient.forEach(({ code, count, have }) => {
+      const row = document.createElement("div");
+      row.className = "missing-row";
+      row.textContent = `${code}：需要 ${count} 粒，库存 ${have} 粒，缺 ${count - have} 粒`;
+      insufficientEl.appendChild(row);
+    });
+  } else {
+    insufficientBox.style.display = "none";
+  }
 
   const missingEl = document.getElementById("missingResult");
   missingEl.innerHTML = "";
@@ -716,15 +1089,59 @@ function compare(items) {
     missingEl.appendChild(total);
   }
 }
-function exportList() {
-  const blob = new Blob([colors.map(r => r.code).join("\n")], {type: "text/plain;charset=utf-8"});
+function deleteItem(code) {
+  const r = colors.find(x => x.code === code);
+  if (!r) return;
+  colors = colors.filter(x => x.code !== code);
+  addHistoryEntry("delete", [{ code, delta: -r.total, before: r.total, after: 0 }]);
+  save();
+}
+
+function exportBackup() {
+  const today = new Date().toISOString().slice(0, 10);
+  const payload = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), inventory: colors, history: historyLog }, null, 2);
+  const blob = new Blob([payload], {type: "application/json;charset=utf-8"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = "拼豆色号库存.txt"; a.click();
+  a.href = url; a.download = `bead-inventory-backup-${today}.json`; a.click();
   URL.revokeObjectURL(url);
 }
+
+function importBackup() {
+  document.getElementById("importFileInput").click();
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  const reader = new FileReader();
+  reader.onload = evt => {
+    let data;
+    try { data = JSON.parse(evt.target.result); } catch { alert("文件格式错误，无法解析 JSON。"); return; }
+    if (!data || data.version !== 1 || !Array.isArray(data.inventory) || !Array.isArray(data.history)) {
+      alert("备份文件格式不符，无法导入。"); return;
+    }
+    if (!confirm("导入备份会覆盖当前本地库存和历史记录。建议先导出当前数据作为备份。确定继续吗？")) return;
+    colors = migrate(data.inventory);
+    historyLog = data.history;
+    storageSave(KEY, JSON.stringify(colors));
+    storageSave(HIST_KEY, JSON.stringify(historyLog));
+    render();
+    alert("备份已导入本地。如需更新云端，请手动同步。");
+  };
+  reader.readAsText(file);
+}
 function clearAll() {
-  if (confirm("确定清空全部库存色号吗？")) { colors = []; save(); }
+  if (!confirm("确定清空全部库存色号吗？")) return;
+  if (colors.length) {
+    const histItems = colors.map(r => ({ code: r.code, delta: -r.total, before: r.total, after: 0 }));
+    colors = [];
+    addHistoryEntry("delete", histItems, "清空全部库存");
+  } else {
+    colors = [];
+  }
+  save();
 }
 
 // ── Cloud sync ──────────────────────────────────────────────────────────────
@@ -847,14 +1264,34 @@ document.getElementById("editModal").addEventListener("click", e => { if (e.targ
 document.getElementById("editPacks").addEventListener("input", updateEditCalc);
 document.getElementById("editLoose").addEventListener("input", updateEditCalc);
 
+// Purchase drawer
+document.getElementById("purchaseCloseBtn").addEventListener("click", closePurchaseDrawer);
+document.getElementById("purchaseBackdrop").addEventListener("click", closePurchaseDrawer);
+document.getElementById("copyPurchaseBtn").addEventListener("click", copyPurchaseList);
+
+// History drawer
+document.getElementById("histBtn").addEventListener("click", openHistoryDrawer);
+document.getElementById("histCloseBtn").addEventListener("click", closeHistoryDrawer);
+document.getElementById("histBackdrop").addEventListener("click", closeHistoryDrawer);
+
 // Inventory card
-document.getElementById("exportBtn").addEventListener("click", exportList);
+document.getElementById("exportBtn").addEventListener("click", exportBackup);
+document.getElementById("importBtn").addEventListener("click", importBackup);
+document.getElementById("importFileInput").addEventListener("change", handleImportFile);
 document.getElementById("clearBtn").addEventListener("click", clearAll);
 document.getElementById("searchColor").addEventListener("input", searchColor);
 
 // Check card
 document.getElementById("checkBtn").addEventListener("click", checkNeed);
-document.getElementById("clearNeedBtn").addEventListener("click", () => { document.getElementById("needList").value = ""; });
+document.getElementById("consumeBtn").addEventListener("click", consumeInventory);
+document.getElementById("consumeCancelBtn").addEventListener("click", closeConsumeModal);
+document.getElementById("consumeConfirmBtn").addEventListener("click", confirmConsume);
+document.getElementById("consumeModal").addEventListener("click", e => { if (e.target === e.currentTarget) closeConsumeModal(); });
+document.getElementById("clearNeedBtn").addEventListener("click", () => {
+  document.getElementById("needList").value = "";
+  document.getElementById("consumeBtn").style.display = "none";
+  lastCheckedItems = [];
+});
 
 // Sync bar
 document.getElementById("genKeyBtn").addEventListener("click", () => {

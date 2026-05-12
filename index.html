@@ -252,6 +252,18 @@
   <div class="hist-body" id="histBody"></div>
 </div>
 
+<div class="hist-backdrop" id="patBackdrop"></div>
+<div class="hist-drawer" id="patDrawer">
+  <div class="hist-head">
+    <h3>图纸库</h3>
+    <button type="button" class="ghost" id="patCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
+  </div>
+  <div class="hist-body" id="patBody"></div>
+  <div style="padding:10px 12px;border-top:1px solid var(--line);flex-shrink:0">
+    <button id="batchPurchaseBtn" type="button" style="width:100%;margin:0">生成批量采购清单</button>
+  </div>
+</div>
+
 <div id="addModal" class="modal-overlay" hidden>
   <div class="modal">
     <h3>添加库存</h3>
@@ -382,12 +394,16 @@
 
     <!-- ── check card ── -->
     <section class="card">
-      <h2>检查图纸需求</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h2 style="margin:0">检查图纸需求</h2>
+        <button id="patLibBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">图纸库</button>
+      </div>
       <label for="needList">粘贴图纸需要的色号</label>
       <textarea id="needList" class="mono" placeholder="例如：E1 E3 E11 E15 E16 E18 F7 F10 F11 F15 F19 F21 F25 H2 H7 M13"></textarea>
       <div class="btn-group">
         <button id="checkBtn" type="button">检查缺色</button>
         <button id="consumeBtn" class="secondary" type="button" style="display:none">确认消耗库存</button>
+        <button id="savePatBtn" class="ghost" type="button">保存到图纸库</button>
         <button id="clearNeedBtn" class="ghost" type="button">清空需求</button>
       </div>
 
@@ -415,6 +431,7 @@
 const KEY                = "bead_color_inventory_v3";
 const KEY_V2             = "bead_color_inventory_v2";
 const HIST_KEY           = "bead_inv_history_v1";
+const PATTERN_KEY        = "bead_pattern_lib_v1";
 const PACK               = 200;
 const INV_PACK           = 1000;
 const LOW_STOCK_THRESHOLD = 200;
@@ -475,6 +492,8 @@ function migrate(raw) {
 
 let colors = migrate(JSON.parse(storageLoad(KEY, "[]")));
 let historyLog = JSON.parse(storageLoad(HIST_KEY, "[]"));
+let patternLib = JSON.parse(storageLoad(PATTERN_KEY, "[]"));
+let batchPurchaseText = null;
 
 function normalize(s) {
   return String(s).trim().replace(/\s+/g, "").toUpperCase();
@@ -692,6 +711,7 @@ function renderPurchaseList() {
 }
 
 function openPurchaseDrawer() {
+  batchPurchaseText = null;
   renderPurchaseList();
   document.getElementById("purchaseDrawer").classList.add("open");
   document.getElementById("purchaseBackdrop").classList.add("open");
@@ -702,6 +722,18 @@ function closePurchaseDrawer() {
 }
 
 function copyPurchaseList() {
+  if (batchPurchaseText != null) {
+    const btn = document.getElementById("copyPurchaseBtn");
+    const t = batchPurchaseText;
+    navigator.clipboard.writeText(t).then(() => {
+      btn.textContent = "已复制 ✓"; setTimeout(() => { btn.textContent = "复制清单"; }, 2000);
+    }).catch(() => {
+      const ta = document.createElement("textarea"); ta.value = t;
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      btn.textContent = "已复制 ✓"; setTimeout(() => { btn.textContent = "复制清单"; }, 2000);
+    });
+    return;
+  }
   const lowItems = colors.filter(r => r.total < LOW_STOCK_THRESHOLD)
     .sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
   const text = lowItems.map(r => {
@@ -791,6 +823,125 @@ function openHistoryDrawer() {
 function closeHistoryDrawer() {
   document.getElementById("histDrawer").classList.remove("open");
   document.getElementById("histBackdrop").classList.remove("open");
+}
+
+function renderPatternLib() {
+  const body = document.getElementById("patBody");
+  body.innerHTML = "";
+  if (!patternLib.length) {
+    const el = document.createElement("div"); el.className = "hist-empty"; el.textContent = "图纸库暂无记录。";
+    body.appendChild(el); return;
+  }
+  patternLib.forEach(pat => {
+    const totalBeads = pat.items.reduce((s, i) => s + i.count, 0);
+    const timeStr = new Date(pat.createdAt).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit" });
+    const card = document.createElement("div"); card.className = "hist-entry";
+    card.style.cssText = "padding:12px 13px;cursor:pointer;display:flex;align-items:center;gap:10px";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.dataset.patId = pat.id;
+    cb.style.cssText = "flex-shrink:0;width:16px;height:16px;cursor:pointer";
+    cb.addEventListener("click", e => e.stopPropagation());
+    const content = document.createElement("div"); content.style.cssText = "flex:1;min-width:0";
+    const top = document.createElement("div"); top.className = "hist-entry-top";
+    const titleEl = document.createElement("span"); titleEl.className = "hist-entry-title"; titleEl.textContent = pat.name;
+    const rightGrp = document.createElement("div");
+    rightGrp.style.cssText = "display:flex;align-items:center;gap:6px;flex-shrink:0";
+    const timeEl = document.createElement("span"); timeEl.className = "hist-entry-time"; timeEl.textContent = timeStr;
+    const delBtn = document.createElement("button");
+    delBtn.type = "button"; delBtn.className = "ghost";
+    delBtn.style.cssText = "font-size:11px;padding:2px 6px";
+    delBtn.textContent = "删除";
+    delBtn.addEventListener("click", e => { e.stopPropagation(); deletePattern(pat.id); });
+    rightGrp.appendChild(timeEl); rightGrp.appendChild(delBtn);
+    top.appendChild(titleEl); top.appendChild(rightGrp);
+    const sub = document.createElement("div"); sub.className = "hist-entry-sub";
+    sub.textContent = `${pat.items.length} 个色号 · 共 ${totalBeads.toLocaleString()} 粒`;
+    content.appendChild(top); content.appendChild(sub);
+    card.appendChild(cb); card.appendChild(content);
+    card.addEventListener("click", e => { if (!e.target.matches("input, button")) loadPattern(pat.id); });
+    body.appendChild(card);
+  });
+}
+
+function saveToPatternLib() {
+  const items = lastCheckedItems.filter(i => i.count != null);
+  if (!items.length) { alert("请先检查一个包含颜色数量的图纸需求。"); return; }
+  const name = prompt("请输入图纸名称：")?.trim();
+  if (!name) return;
+  patternLib.unshift({ id: Date.now() + Math.random().toString(36).slice(2, 5), name, createdAt: new Date().toISOString(), items });
+  storageSave(PATTERN_KEY, JSON.stringify(patternLib));
+  if (document.getElementById("patDrawer").classList.contains("open")) renderPatternLib();
+}
+
+function deletePattern(id) {
+  if (!confirm("确定删除这个图纸记录吗？")) return;
+  patternLib = patternLib.filter(p => p.id !== id);
+  storageSave(PATTERN_KEY, JSON.stringify(patternLib));
+  renderPatternLib();
+}
+
+function loadPattern(id) {
+  const pat = patternLib.find(p => p.id === id);
+  if (!pat) return;
+  document.getElementById("needList").value = pat.items.map(i => `${i.code} ${i.count}`).join("\n");
+  closePatternDrawer();
+  checkNeed();
+}
+
+function openPatternDrawer() {
+  renderPatternLib();
+  document.getElementById("patDrawer").classList.add("open");
+  document.getElementById("patBackdrop").classList.add("open");
+}
+
+function closePatternDrawer() {
+  document.getElementById("patDrawer").classList.remove("open");
+  document.getElementById("patBackdrop").classList.remove("open");
+}
+
+function generateBatchPurchase() {
+  const checked = [...document.querySelectorAll("#patBody input[type=checkbox]:checked")];
+  if (!checked.length) { alert("请先勾选至少一个图纸。"); return; }
+  const combined = new Map();
+  checked.forEach(cb => {
+    const pat = patternLib.find(p => p.id === cb.dataset.patId);
+    if (!pat) return;
+    pat.items.forEach(({ code, count }) => combined.set(code, (combined.get(code) || 0) + count));
+  });
+  const lines = [];
+  combined.forEach((needed, code) => {
+    const r = colors.find(x => x.code === code);
+    const have = r ? r.total : 0;
+    if (have >= needed) return;
+    const shortage = needed - have;
+    lines.push({ code, needed, have, shortage, packs: Math.ceil(shortage / INV_PACK) });
+  });
+  lines.sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", { numeric: true }));
+  const body = document.getElementById("purchaseBody");
+  body.innerHTML = "";
+  if (!lines.length) {
+    const el = document.createElement("div"); el.className = "hist-empty"; el.textContent = "库存充足，无需采购。";
+    body.appendChild(el);
+    batchPurchaseText = "库存充足，无需采购。";
+  } else {
+    const list = document.createElement("div"); list.style.background = "#fffaf5";
+    lines.forEach(({ code, needed, have, shortage, packs }) => {
+      const item = document.createElement("div"); item.className = "purchase-item";
+      const codeEl = document.createElement("span"); codeEl.className = "purchase-code";
+      codeEl.textContent = `${code}：总需求 ${needed.toLocaleString()} 粒，库存 ${have.toLocaleString()} 粒，缺 ${shortage.toLocaleString()} 粒`;
+      const suggestEl = document.createElement("span"); suggestEl.className = "purchase-suggest";
+      suggestEl.textContent = `建议购买 ${packs} 包`;
+      item.appendChild(codeEl); item.appendChild(suggestEl);
+      list.appendChild(item);
+    });
+    body.appendChild(list);
+    batchPurchaseText = lines.map(({ code, needed, have, shortage, packs }) =>
+      `${code}：总需求 ${needed} 粒，库存 ${have} 粒，缺 ${shortage} 粒，建议购买 ${packs} 包`
+    ).join("\n");
+  }
+  closePatternDrawer();
+  document.getElementById("purchaseDrawer").classList.add("open");
+  document.getElementById("purchaseBackdrop").classList.add("open");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1273,6 +1424,11 @@ document.getElementById("copyPurchaseBtn").addEventListener("click", copyPurchas
 document.getElementById("histBtn").addEventListener("click", openHistoryDrawer);
 document.getElementById("histCloseBtn").addEventListener("click", closeHistoryDrawer);
 document.getElementById("histBackdrop").addEventListener("click", closeHistoryDrawer);
+document.getElementById("patLibBtn").addEventListener("click", openPatternDrawer);
+document.getElementById("patCloseBtn").addEventListener("click", closePatternDrawer);
+document.getElementById("patBackdrop").addEventListener("click", closePatternDrawer);
+document.getElementById("savePatBtn").addEventListener("click", saveToPatternLib);
+document.getElementById("batchPurchaseBtn").addEventListener("click", generateBatchPurchase);
 
 // Inventory card
 document.getElementById("exportBtn").addEventListener("click", exportBackup);

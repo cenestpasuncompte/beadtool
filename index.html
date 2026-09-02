@@ -164,7 +164,8 @@
     padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;
     align-items:center;gap:10px;
   }
-  .sync-status{font-size:13px;display:flex;align-items:center;gap:5px;margin-left:auto}
+  .sync-status{font-size:12px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-left:auto}
+  .sync-status-row{display:flex;align-items:center;gap:5px;white-space:nowrap}
   .sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
   .sync-dot.local  {background:#aaa}
   .sync-dot.ok     {background:var(--ok)}
@@ -402,8 +403,8 @@
     <button id="syncInventoryBtn" class="ghost" type="button" style="display:none">同步库存</button>
     <button id="disconnectBtn" class="ghost"     type="button" style="display:none">断开</button>
     <div class="sync-status">
-      <span class="sync-dot local" id="syncDot"></span>
-      <span id="syncLabel">仅本地</span>
+      <div class="sync-status-row"><span class="sync-dot local" id="inventorySyncDot"></span><span id="inventorySyncLabel">库存：仅本地</span></div>
+      <div class="sync-status-row"><span class="sync-dot local" id="patternSyncDot"></span><span id="patternSyncLabel">图库：仅本地</span></div>
     </div>
     <div class="modal-warn" id="genKeyWarn">新密钥已生成。请立即保存，否则换设备后无法找回这份库存。</div>
   </div>
@@ -476,6 +477,7 @@ const HIST_KEY           = "bead_inv_history_v1";
 const PATTERN_KEY        = "bead_pattern_lib_v1";
 const PATTERN_IMAGE_DB   = "bead_pattern_images_v1";
 const INVENTORY_EVENTS_KEY = "bead_inventory_event_queue_v1";
+const ACTIVE_INVENTORY_SYNC_KEY = "bead_inventory_active_sync_key_v1";
 const ACTIVE_PATTERN_SYNC_KEY = "bead_pattern_active_sync_key_v1";
 const PACK               = 200;
 const INV_PACK           = 1000;
@@ -594,6 +596,13 @@ function normalize(s) {
 }
 function newCloudUuid() {
   return crypto.randomUUID();
+}
+function inventoryQueueKey(key) {
+  return `${INVENTORY_EVENTS_KEY}_${key}`;
+}
+function saveInventoryEventQueue() {
+  storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+  if (syncKey) storageSave(inventoryQueueKey(syncKey), JSON.stringify(inventoryEventQueue));
 }
 function correctCode(tok) {
   const t = tok.replace(/[\s\-]/g, "").toUpperCase();
@@ -860,7 +869,7 @@ function addHistoryEntry(type, items, note = "") {
       clientEventId: crypto.randomUUID(), eventType: type, code: item.code,
       delta: item.delta, beforeTotal: item.before, afterTotal: item.after, note
     }));
-    storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+    saveInventoryEventQueue();
     inventoryDirty = inventoryEventQueue.length > 0;
   }
   if (document.getElementById("histDrawer").classList.contains("open")) renderHistory();
@@ -1244,7 +1253,7 @@ function save() {
   storageSave(KEY, JSON.stringify(colors));
   render();
   inventoryDirty = inventoryEventQueue.length > 0;
-  if (syncKey) setSyncStatus("local", "库存有未同步改动");
+  if (syncKey) setInventoryStatus("local", "有未同步改动");
 }
 
 function render() {
@@ -1623,12 +1632,14 @@ function mergeInventories(local, cloud) {
   return [...map.values()].sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
 }
 
-function setSyncStatus(state, msg) {
-  const dot = document.getElementById("syncDot");
-  const label = document.getElementById("syncLabel");
+function setStatus(kind, state, msg) {
+  const dot = document.getElementById(kind === "inventory" ? "inventorySyncDot" : "patternSyncDot");
+  const label = document.getElementById(kind === "inventory" ? "inventorySyncLabel" : "patternSyncLabel");
   dot.className = "sync-dot " + state;
   label.textContent = msg;
 }
+function setInventoryStatus(state, msg) { setStatus("inventory", state, `库存：${msg}`); }
+function setPatternStatus(state, msg) { setStatus("pattern", state, `图库：${msg}`); }
 
 function setSyncConnectedUI(connected) {
   document.getElementById("connectBtn").style.display    = connected ? "none"  : "";
@@ -1638,7 +1649,7 @@ function setSyncConnectedUI(connected) {
 
 async function cloudLoad() {
   if (!syncKey || !supabaseClient) return;
-  setSyncStatus("syncing", "同步中…");
+  setInventoryStatus("syncing", "同步中…");
   try {
     const { data, error } = await supabaseClient
       .from("bead_inventories")
@@ -1658,21 +1669,21 @@ async function cloudLoad() {
       await cloudSave(colors);
     }
   } catch(e) {
-    setSyncStatus("error", "同步失败，将使用本地数据");
+    setInventoryStatus("error", "同步失败，将使用本地数据");
   }
 }
 
 async function cloudSave(colorArray) {
   if (!syncKey || !supabaseClient) return;
-  setSyncStatus("syncing", "同步中…");
+  setInventoryStatus("syncing", "同步中…");
   try {
     const { error } = await supabaseClient
       .from("bead_inventories")
       .upsert({ sync_key: syncKey, colors: colorArray, updated_at: new Date().toISOString() });
     if (error) throw error;
-    setSyncStatus("ok", "云端已连接 · 已同步");
+    setInventoryStatus("ok", "云端已同步");
   } catch(e) {
-    setSyncStatus("error", "同步失败，数据已保存本地");
+    setInventoryStatus("error", "同步失败，数据已保存本地");
   }
 }
 
@@ -1680,7 +1691,7 @@ function reportPatternCloudError(error) {
   console.error("图库云端保存失败", error);
   const detail = [error?.message, error?.code, error?.status, error?.error, error?.details, error?.hint]
     .filter(Boolean).join(" · ") || JSON.stringify(error) || "未知错误";
-  setSyncStatus("error", `图库未保存到云端：${detail}`);
+  setPatternStatus("error", `未保存到云端：${detail}`);
   alert(`图库没有保存到云端。\n\n${detail}\n\n请不要刷新页面，把这段提示发给我。`);
 }
 
@@ -1722,8 +1733,8 @@ async function cloudSavePatterns() {
 
 async function syncInventoryManual() {
   if (!syncKey || !supabaseClient) { alert("请先连接同步密钥。"); return; }
-  if (!inventoryEventQueue.length) { await cloudLoad(); setSyncStatus("ok", "库存已同步"); return; }
-  setSyncStatus("syncing", `正在同步 ${inventoryEventQueue.length} 条库存变动…`);
+  if (!inventoryEventQueue.length) { await cloudLoad(); setInventoryStatus("ok", "已同步"); return; }
+  setInventoryStatus("syncing", `正在同步 ${inventoryEventQueue.length} 条变动…`);
   while (inventoryEventQueue.length) {
     const event = inventoryEventQueue[0];
     const { data, error } = await supabaseClient.rpc("apply_bead_inventory_event", {
@@ -1734,22 +1745,22 @@ async function syncInventoryManual() {
     if (error) throw error;
     colors = migrate(Array.isArray(data) ? data : []);
     inventoryEventQueue.shift();
-    storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+    saveInventoryEventQueue();
     storageSave(KEY, JSON.stringify(colors));
   }
   inventoryDirty = false;
   render();
-  setSyncStatus("ok", "库存已同步");
+  setInventoryStatus("ok", "已同步");
 }
 
 async function syncPatternLibraryManual() {
   if (!syncKey || !supabaseClient) { alert("请先连接同步密钥，再同步图库。"); return; }
   const btn = document.getElementById("syncPatternsBtn");
   btn.disabled = true; btn.textContent = "同步中…";
-  setSyncStatus("syncing", "图库同步中…");
+  setPatternStatus("syncing", "同步中…");
   try {
     await cloudSavePatterns();
-    setSyncStatus("ok", "图库已保存到云端");
+    setPatternStatus("ok", "已保存到云端");
     btn.textContent = "已同步 ✓";
     setTimeout(() => { btn.textContent = "同步图库"; }, 1800);
   } catch (e) {
@@ -1766,13 +1777,13 @@ async function cloudLoadPatterns() {
   if (error) throw error;
   const total = (data || []).length;
   let completed = 0;
-  setSyncStatus("syncing", total ? `正在下载图库 0/${total}…` : "正在检查云端图库…");
+  setPatternStatus("syncing", total ? `正在下载 0/${total}…` : "正在检查云端图库…");
   const localById = new Map(patternLib.map(p => [p.cloudId || p.id, p]));
   for (const row of data || []) {
     completed++;
     const local = localById.get(row.id);
     if (local && new Date(local.updatedAt || local.createdAt) >= new Date(row.updated_at)) {
-      setSyncStatus("syncing", `正在检查图库 ${completed}/${total}…`);
+      setPatternStatus("syncing", `正在检查 ${completed}/${total}…`);
       continue;
     }
     const { data: images } = await supabaseClient.from("bead_pattern_images").select("*").eq("pattern_id", row.id).order("position");
@@ -1782,17 +1793,24 @@ async function cloudLoadPatterns() {
       if (file) { await saveFullPatternImage(pat.id, image.position, file); if (image.position === 1) pat.image = await compressPatternImage(file); }
     }
     localById.set(pat.id, pat);
-    setSyncStatus("syncing", `正在下载图库 ${completed}/${total}…`);
+    setPatternStatus("syncing", `正在下载 ${completed}/${total}…`);
   }
   patternLib = [...localById.values()];
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   renderPatternLib();
-  await cloudSavePatterns();
-  setSyncStatus("ok", "云端已连接 · 图库已同步");
+  setPatternStatus("ok", "已同步");
 }
 
 async function connectCloud(key) {
   if (!key) return;
+  const cachedInventoryKey = storageLoad(ACTIVE_INVENTORY_SYNC_KEY, storageLoad(SYNC_KEY_STORAGE, ""));
+  if (cachedInventoryKey !== key) {
+    if (cachedInventoryKey) storageSave(inventoryQueueKey(cachedInventoryKey), JSON.stringify(inventoryEventQueue));
+    inventoryEventQueue = JSON.parse(storageLoad(inventoryQueueKey(key), "[]"));
+    inventoryDirty = inventoryEventQueue.length > 0;
+    storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+    storageSave(ACTIVE_INVENTORY_SYNC_KEY, key);
+  }
   const cachedPatternKey = storageLoad(ACTIVE_PATTERN_SYNC_KEY, "");
   if (cachedPatternKey !== key) {
     if (cachedPatternKey) storageSave(`${PATTERN_KEY}_${cachedPatternKey}`, JSON.stringify(patternLib));
@@ -1808,7 +1826,7 @@ async function connectCloud(key) {
   await cloudLoad();
   try { await cloudLoadPatterns(); } catch (e) {
     console.error("图库同步失败", e);
-    setSyncStatus("error", `图库同步失败：${e.message || "请检查访问规则"}`);
+    setPatternStatus("error", `同步失败：${e.message || "请检查访问规则"}`);
   }
 }
 
@@ -1816,7 +1834,8 @@ function disconnectCloud() {
   syncKey = null;
   try { localStorage.removeItem(SYNC_KEY_STORAGE); } catch(e) {}
   setSyncConnectedUI(false);
-  setSyncStatus("local", "仅本地");
+  setInventoryStatus("local", "仅本地");
+  setPatternStatus("local", "仅本地");
 }
 
 function initCloud() {
@@ -1873,7 +1892,7 @@ document.getElementById("patLibBtn").addEventListener("click", openPatternDrawer
 document.getElementById("patCloseBtn").addEventListener("click", closePatternDrawer);
 document.getElementById("patBackdrop").addEventListener("click", closePatternDrawer);
 document.getElementById("syncPatternsBtn").addEventListener("click", syncPatternLibraryManual);
-document.getElementById("syncInventoryBtn").addEventListener("click", () => syncInventoryManual().catch(e => setSyncStatus("error", `库存同步失败：${e.message || "未知错误"}`)));
+document.getElementById("syncInventoryBtn").addEventListener("click", () => syncInventoryManual().catch(e => setInventoryStatus("error", `同步失败：${e.message || "未知错误"}`)));
 document.getElementById("patternImageInput").addEventListener("change", e => {
   attachPatternImage(e.target.files[0], patternImageTarget);
   patternImageTarget = null;

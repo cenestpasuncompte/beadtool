@@ -1004,7 +1004,7 @@ function saveToPatternLib() {
   if (!name) return;
   patternLib.unshift({ id: Date.now() + Math.random().toString(36).slice(2, 5), name, createdAt: new Date().toISOString(), items });
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
-  cloudSavePattern(patternLib[0]).catch(() => {});
+  cloudSavePattern(patternLib[0]).catch(reportPatternCloudError);
   if (document.getElementById("patDrawer").classList.contains("open")) renderPatternLib();
 }
 
@@ -1025,7 +1025,7 @@ function editPatternName(id) {
   if (!name || name === pat.name) return;
   pat.name = name;
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
-  cloudSavePattern(pat).catch(() => {});
+  cloudSavePattern(pat).catch(reportPatternCloudError);
   renderPatternLib();
 }
 
@@ -1132,7 +1132,7 @@ async function attachPatternImage(file, target) {
       return;
     }
     renderPatternLib();
-    cloudSavePattern(pat).catch(() => {});
+    cloudSavePattern(pat).catch(reportPatternCloudError);
   } catch (e) {
     alert("图片读取失败，请换一张图片后重试。");
   }
@@ -1639,6 +1639,13 @@ async function cloudSave(colorArray) {
   } catch(e) {
     setSyncStatus("error", "同步失败，数据已保存本地");
   }
+}
+
+function reportPatternCloudError(error) {
+  console.error("图库云端保存失败", error);
+  const detail = error?.message || "未知错误";
+  setSyncStatus("error", `图库未保存到云端：${detail}`);
+  alert(`图库没有保存到云端。\n\n${detail}\n\n请不要刷新页面，把这段提示发给我。`);
 }
 
 async function cloudSavePattern(pat) {

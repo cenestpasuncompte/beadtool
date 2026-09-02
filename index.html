@@ -241,6 +241,7 @@
     padding:5px;cursor:pointer;
   }
   .pattern-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+  #patBody input[type="checkbox"]{appearance:checkbox;-webkit-appearance:checkbox;width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
   .pattern-stock{font-size:12px;font-weight:700;margin-top:4px}.pattern-stock.ok{color:var(--ok)}.pattern-stock.bad{color:var(--bad)}
   .pattern-actions button{font-size:12px;padding:5px 8px;min-height:30px;margin:0}
   .image-viewer{max-width:min(960px,100%);max-height:calc(100vh - 40px);padding:12px;display:flex;flex-direction:column}
@@ -283,7 +284,7 @@
   </div>
   <div class="hist-body" id="patBody"></div>
   <div style="padding:10px 12px;border-top:1px solid var(--line);flex-shrink:0">
-    <button id="batchPurchaseBtn" type="button" style="width:100%;margin:0">生成批量采购清单</button>
+    <button id="batchPurchaseBtn" type="button" style="width:100%;margin:0" disabled>生成清单</button>
   </div>
 </div>
 <input id="patternImageInput" type="file" accept="image/*" hidden />
@@ -398,6 +399,7 @@
            autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
     <button id="genKeyBtn"     class="ghost"     type="button">生成新密钥</button>
     <button id="connectBtn"    class="secondary" type="button">连接</button>
+    <button id="syncInventoryBtn" class="ghost" type="button" style="display:none">同步库存</button>
     <button id="disconnectBtn" class="ghost"     type="button" style="display:none">断开</button>
     <div class="sync-status">
       <span class="sync-dot local" id="syncDot"></span>
@@ -473,6 +475,7 @@ const KEY_V2             = "bead_color_inventory_v2";
 const HIST_KEY           = "bead_inv_history_v1";
 const PATTERN_KEY        = "bead_pattern_lib_v1";
 const PATTERN_IMAGE_DB   = "bead_pattern_images_v1";
+const INVENTORY_EVENTS_KEY = "bead_inventory_event_queue_v1";
 const PACK               = 200;
 const INV_PACK           = 1000;
 const LOW_STOCK_THRESHOLD = 200;
@@ -580,6 +583,9 @@ let patternImageTarget = null;
 let openImageObjectUrl = null;
 let openPattern = null;
 let openPatternImageIndex = 1;
+let selectedPatternIds = new Set();
+let inventoryEventQueue = JSON.parse(storageLoad(INVENTORY_EVENTS_KEY, "[]"));
+let inventoryDirty = inventoryEventQueue.length > 0;
 let batchPurchaseText = null;
 
 function normalize(s) {
@@ -848,6 +854,14 @@ function addHistoryEntry(type, items, note = "") {
   historyLog.unshift({ id: Date.now() + Math.random().toString(36).slice(2,5), type, timestamp: new Date().toISOString(), items, note });
   if (historyLog.length > 300) historyLog.length = 300;
   storageSave(HIST_KEY, JSON.stringify(historyLog));
+  if (["add", "consume", "edit", "delete"].includes(type)) {
+    items.forEach(item => inventoryEventQueue.push({
+      clientEventId: crypto.randomUUID(), eventType: type, code: item.code,
+      delta: item.delta, beforeTotal: item.before, afterTotal: item.after, note
+    }));
+    storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+    inventoryDirty = inventoryEventQueue.length > 0;
+  }
   if (document.getElementById("histDrawer").classList.contains("open")) renderHistory();
 }
 
@@ -928,8 +942,12 @@ function renderPatternLib() {
     const card = document.createElement("div"); card.className = "hist-entry pattern-entry";
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.dataset.patId = pat.id;
-    cb.style.cssText = "flex-shrink:0;width:16px;height:16px;cursor:pointer";
-    cb.addEventListener("click", e => e.stopPropagation());
+    cb.checked = selectedPatternIds.has(pat.id);
+    cb.style.cssText = "flex-shrink:0";
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedPatternIds.add(pat.id); else selectedPatternIds.delete(pat.id);
+      updatePatternSelectionUI();
+    });
     const content = document.createElement("div"); content.style.cssText = "flex:1;min-width:0";
     const top = document.createElement("div"); top.className = "hist-entry-top";
     const titleEl = document.createElement("span"); titleEl.className = "hist-entry-title"; titleEl.textContent = pat.name;
@@ -1004,7 +1022,8 @@ function saveToPatternLib() {
   if (!name) return;
   patternLib.unshift({ id: Date.now() + Math.random().toString(36).slice(2, 5), name, createdAt: new Date().toISOString(), items });
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
-  cloudSavePattern(patternLib[0]).catch(reportPatternCloudError);
+  patternLib[0].cloudDirty = true;
+  storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   if (document.getElementById("patDrawer").classList.contains("open")) renderPatternLib();
 }
 
@@ -1013,9 +1032,11 @@ function deletePattern(id) {
   const pat = patternLib.find(p => p.id === id);
   deleteFullPatternImage(id);
   patternLib = patternLib.filter(p => p.id !== id);
+  selectedPatternIds.delete(id);
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   if (syncKey && supabaseClient && pat?.cloudId) supabaseClient.from("bead_patterns").delete().eq("id", pat.cloudId).then(() => {});
   renderPatternLib();
+  updatePatternSelectionUI();
 }
 
 function editPatternName(id) {
@@ -1025,7 +1046,8 @@ function editPatternName(id) {
   if (!name || name === pat.name) return;
   pat.name = name;
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
-  cloudSavePattern(pat).catch(reportPatternCloudError);
+  pat.cloudDirty = true;
+  storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   renderPatternLib();
 }
 
@@ -1132,7 +1154,9 @@ async function attachPatternImage(file, target) {
       return;
     }
     renderPatternLib();
-    cloudSavePattern(pat).catch(reportPatternCloudError);
+    pat.cloudDirty = true;
+    pat.cloudDirtyImages = [...new Set([...(pat.cloudDirtyImages || []), nextIndex])];
+    storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   } catch (e) {
     alert("图片读取失败，请换一张图片后重试。");
   }
@@ -1150,6 +1174,7 @@ function openPatternDrawer() {
   renderPatternLib();
   document.getElementById("patDrawer").classList.add("open");
   document.getElementById("patBackdrop").classList.add("open");
+  updatePatternSelectionUI();
 }
 
 function closePatternDrawer() {
@@ -1157,13 +1182,20 @@ function closePatternDrawer() {
   document.getElementById("patBackdrop").classList.remove("open");
 }
 
+function updatePatternSelectionUI() {
+  const validIds = new Set(patternLib.map(p => p.id));
+  selectedPatternIds = new Set([...selectedPatternIds].filter(id => validIds.has(id)));
+  const btn = document.getElementById("batchPurchaseBtn");
+  const count = selectedPatternIds.size;
+  btn.disabled = count === 0;
+  btn.textContent = count ? `生成清单（${count}）` : "生成清单";
+}
+
 function generateBatchPurchase() {
-  const checked = [...document.querySelectorAll("#patBody input[type=checkbox]:checked")];
-  if (!checked.length) { alert("请先勾选至少一个图纸。"); return; }
+  const selected = patternLib.filter(p => selectedPatternIds.has(p.id));
+  if (!selected.length) { alert("请先勾选至少一个图纸。"); return; }
   const combined = new Map();
-  checked.forEach(cb => {
-    const pat = patternLib.find(p => p.id === cb.dataset.patId);
-    if (!pat) return;
+  selected.forEach(pat => {
     pat.items.forEach(({ code, count }) => combined.set(code, (combined.get(code) || 0) + count));
   });
   const lines = [];
@@ -1210,7 +1242,8 @@ function save() {
   colors = [...seen.values()].sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", {numeric: true}));
   storageSave(KEY, JSON.stringify(colors));
   render();
-  cloudSave(colors);
+  inventoryDirty = inventoryEventQueue.length > 0;
+  if (syncKey) setSyncStatus("local", "库存有未同步改动");
 }
 
 function render() {
@@ -1599,6 +1632,7 @@ function setSyncStatus(state, msg) {
 function setSyncConnectedUI(connected) {
   document.getElementById("connectBtn").style.display    = connected ? "none"  : "";
   document.getElementById("disconnectBtn").style.display = connected ? ""      : "none";
+  document.getElementById("syncInventoryBtn").style.display = connected ? "" : "none";
 }
 
 async function cloudLoad() {
@@ -1615,11 +1649,11 @@ async function cloudLoad() {
 
     if (data) {
       const cloudRecords = migrate(Array.isArray(data.colors) ? data.colors : []);
-      colors = mergeInventories(colors, cloudRecords);
+      colors = cloudRecords;
       storageSave(KEY, JSON.stringify(colors));
       render();
-      await cloudSave(colors);
     } else {
+      // First connection for a brand-new sync key: create its initial inventory snapshot once.
       await cloudSave(colors);
     }
   } catch(e) {
@@ -1643,14 +1677,16 @@ async function cloudSave(colorArray) {
 
 function reportPatternCloudError(error) {
   console.error("图库云端保存失败", error);
-  const detail = error?.message || "未知错误";
+  const detail = [error?.message, error?.code, error?.status, error?.error, error?.details, error?.hint]
+    .filter(Boolean).join(" · ") || JSON.stringify(error) || "未知错误";
   setSyncStatus("error", `图库未保存到云端：${detail}`);
   alert(`图库没有保存到云端。\n\n${detail}\n\n请不要刷新页面，把这段提示发给我。`);
 }
 
 async function cloudSavePattern(pat) {
   if (!syncKey || !supabaseClient) return;
-  if (!pat.cloudId) {
+  const isNewCloudPattern = !pat.cloudId;
+  if (isNewCloudPattern) {
     pat.cloudId = newCloudUuid();
     storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   }
@@ -1660,22 +1696,49 @@ async function cloudSavePattern(pat) {
     created_at: pat.createdAt || new Date().toISOString(), updated_at: pat.updatedAt || new Date().toISOString()
   });
   if (error) throw error;
-  if (!pat.hasFullImage) return;
+  if (!pat.hasFullImage) { pat.cloudDirty = false; storageSave(PATTERN_KEY, JSON.stringify(patternLib)); return; }
   const count = Math.max(1, Number(pat.imageCount) || 1);
-  for (let index = 1; index <= count; index++) {
+  const imageIndexes = pat.cloudDirtyImages?.length ? pat.cloudDirtyImages : (isNewCloudPattern ? [...Array(count)].map((_, i) => i + 1) : []);
+  for (const index of imageIndexes) {
     const file = await loadFullPatternImage(pat.id, index);
     if (!file) continue;
     const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
     const path = `${syncKey}/${cloudId}/${index}.${ext}`;
-    const { error: uploadError } = await supabaseClient.storage.from("bead-patterns").upload(path, file, { upsert: true, contentType: file.type });
+    const bytes = await file.arrayBuffer();
+    if (!bytes.byteLength) throw new Error("本地图片内容为空，请重新上传这张图纸");
+    const { error: uploadError } = await supabaseClient.storage.from("bead-patterns").upload(path, bytes, { upsert: true, contentType: file.type || "image/png" });
     if (uploadError) throw uploadError;
     const { error: imageError } = await supabaseClient.from("bead_pattern_images").upsert({ pattern_id: cloudId, position: index, storage_path: path, original_name: file.name || null }, { onConflict: "pattern_id,position" });
     if (imageError) throw imageError;
   }
+  pat.cloudDirty = false; pat.cloudDirtyImages = [];
+  storageSave(PATTERN_KEY, JSON.stringify(patternLib));
 }
 
 async function cloudSavePatterns() {
-  for (const pat of patternLib) await cloudSavePattern(pat);
+  for (const pat of patternLib) if (pat.cloudDirty || !pat.cloudId || pat.cloudDirtyImages?.length) await cloudSavePattern(pat);
+}
+
+async function syncInventoryManual() {
+  if (!syncKey || !supabaseClient) { alert("请先连接同步密钥。"); return; }
+  if (!inventoryEventQueue.length) { await cloudLoad(); setSyncStatus("ok", "库存已同步"); return; }
+  setSyncStatus("syncing", `正在同步 ${inventoryEventQueue.length} 条库存变动…`);
+  while (inventoryEventQueue.length) {
+    const event = inventoryEventQueue[0];
+    const { data, error } = await supabaseClient.rpc("apply_bead_inventory_event", {
+      p_sync_key: syncKey, p_client_event_id: event.clientEventId, p_event_type: event.eventType,
+      p_code: event.code, p_delta: event.delta, p_before_total: event.beforeTotal,
+      p_after_total: event.afterTotal, p_note: event.note || ""
+    });
+    if (error) throw error;
+    colors = migrate(Array.isArray(data) ? data : []);
+    inventoryEventQueue.shift();
+    storageSave(INVENTORY_EVENTS_KEY, JSON.stringify(inventoryEventQueue));
+    storageSave(KEY, JSON.stringify(colors));
+  }
+  inventoryDirty = false;
+  render();
+  setSyncStatus("ok", "库存已同步");
 }
 
 async function syncPatternLibraryManual() {
@@ -1792,6 +1855,7 @@ document.getElementById("patLibBtn").addEventListener("click", openPatternDrawer
 document.getElementById("patCloseBtn").addEventListener("click", closePatternDrawer);
 document.getElementById("patBackdrop").addEventListener("click", closePatternDrawer);
 document.getElementById("syncPatternsBtn").addEventListener("click", syncPatternLibraryManual);
+document.getElementById("syncInventoryBtn").addEventListener("click", () => syncInventoryManual().catch(e => setSyncStatus("error", `库存同步失败：${e.message || "未知错误"}`)));
 document.getElementById("patternImageInput").addEventListener("change", e => {
   attachPatternImage(e.target.files[0], patternImageTarget);
   patternImageTarget = null;

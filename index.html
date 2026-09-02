@@ -1668,6 +1668,11 @@ async function cloudLoad() {
       // First connection for a brand-new sync key: create its initial inventory snapshot once.
       await cloudSave(colors);
     }
+    if (inventoryEventQueue.length) {
+      setInventoryStatus("local", `有 ${inventoryEventQueue.length} 条待同步`);
+    } else {
+      setInventoryStatus("ok", "已同步");
+    }
   } catch(e) {
     setInventoryStatus("error", "同步失败，将使用本地数据");
   }

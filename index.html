@@ -439,7 +439,7 @@
         <button id="patLibBtn" class="ghost" type="button" style="margin:0;padding:7px 12px;font-size:13px;min-height:36px">图纸库</button>
       </div>
       <label for="needList">粘贴图纸需要的色号</label>
-      <textarea id="needList" class="mono" placeholder="例如：E1 E3 E11 E15 E16 E18 F7 F10 F11 F15 F19 F21 F25 H2 H7 M13"></textarea>
+      <textarea id="needList" class="mono" placeholder="例如：H7 20\nH6 15\nF8 (30)"></textarea>
       <div class="btn-group">
         <button id="checkBtn" type="button">检查缺色</button>
         <button id="consumeBtn" class="secondary" type="button" style="display:none">确认消耗库存</button>
@@ -601,16 +601,15 @@ function correctCode(tok) {
   const code = letters + fixedRest;
   return /^[A-Z]\d{1,3}$/.test(code) ? code : null;
 }
-// Extracts [{code, count}] from text. count is null when no parenthesised number follows.
-// Ignores bare numbers not directly attached to a color code.
+// Extracts [{code, count}] from text. Supports H7 (20), H7 20 and H7:20.
 function parseCodesWithCounts(text) {
   const raw = String(text).toUpperCase().replace(/[|]/g, "I");
   const seen = new Set();
   const items = [];
   const correctedSet = new Set();
 
-  // Pass 1: code immediately followed by (N) — the N is the bead count
-  const pairRe = /\b([A-Z]{1,2}[\s\-]?[A-Z0-9]{1,4})\s*\((\d{1,5})\)/g;
+  // Pass 1: color code followed by a quantity in common formats.
+  const pairRe = /\b([A-Z]{1,2}[\s\-]?[A-Z0-9]{1,4})\s*(?:\((\d{1,5})\)|[,:：，]\s*(\d{1,5})|\s+(\d{1,5}))/g;
   let m;
   while ((m = pairRe.exec(raw)) !== null) {
     const orig = m[1].replace(/[\s\-]/g, "");
@@ -618,7 +617,7 @@ function parseCodesWithCounts(text) {
     if (!code || seen.has(code)) continue;
     seen.add(code);
     if (orig !== code) correctedSet.add(code);
-    items.push({ code, count: parseInt(m[2], 10) });
+    items.push({ code, count: parseInt(m[2] || m[3] || m[4], 10) });
   }
 
   // Pass 2: standalone codes not already captured above

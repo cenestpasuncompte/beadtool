@@ -476,6 +476,7 @@ const HIST_KEY           = "bead_inv_history_v1";
 const PATTERN_KEY        = "bead_pattern_lib_v1";
 const PATTERN_IMAGE_DB   = "bead_pattern_images_v1";
 const INVENTORY_EVENTS_KEY = "bead_inventory_event_queue_v1";
+const ACTIVE_PATTERN_SYNC_KEY = "bead_pattern_active_sync_key_v1";
 const PACK               = 200;
 const INV_PACK           = 1000;
 const LOW_STOCK_THRESHOLD = 200;
@@ -1763,10 +1764,17 @@ async function cloudLoadPatterns() {
   if (!syncKey || !supabaseClient) return;
   const { data, error } = await supabaseClient.from("bead_patterns").select("*").order("created_at", { ascending: false });
   if (error) throw error;
+  const total = (data || []).length;
+  let completed = 0;
+  setSyncStatus("syncing", total ? `正在下载图库 0/${total}…` : "正在检查云端图库…");
   const localById = new Map(patternLib.map(p => [p.cloudId || p.id, p]));
   for (const row of data || []) {
+    completed++;
     const local = localById.get(row.id);
-    if (local && new Date(local.updatedAt || local.createdAt) >= new Date(row.updated_at)) continue;
+    if (local && new Date(local.updatedAt || local.createdAt) >= new Date(row.updated_at)) {
+      setSyncStatus("syncing", `正在检查图库 ${completed}/${total}…`);
+      continue;
+    }
     const { data: images } = await supabaseClient.from("bead_pattern_images").select("*").eq("pattern_id", row.id).order("position");
     const pat = { id: row.id, cloudId: row.id, name: row.name, items: row.items || [], status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, imageCount: images?.length || 0, hasFullImage: !!images?.length };
     for (const image of images || []) {
@@ -1774,15 +1782,25 @@ async function cloudLoadPatterns() {
       if (file) { await saveFullPatternImage(pat.id, image.position, file); if (image.position === 1) pat.image = await compressPatternImage(file); }
     }
     localById.set(pat.id, pat);
+    setSyncStatus("syncing", `正在下载图库 ${completed}/${total}…`);
   }
   patternLib = [...localById.values()];
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   renderPatternLib();
   await cloudSavePatterns();
+  setSyncStatus("ok", "云端已连接 · 图库已同步");
 }
 
 async function connectCloud(key) {
   if (!key) return;
+  const cachedPatternKey = storageLoad(ACTIVE_PATTERN_SYNC_KEY, "");
+  if (cachedPatternKey !== key) {
+    if (cachedPatternKey) storageSave(`${PATTERN_KEY}_${cachedPatternKey}`, JSON.stringify(patternLib));
+    patternLib = JSON.parse(storageLoad(`${PATTERN_KEY}_${key}`, "[]"));
+    selectedPatternIds.clear();
+    storageSave(PATTERN_KEY, JSON.stringify(patternLib));
+    storageSave(ACTIVE_PATTERN_SYNC_KEY, key);
+  }
   syncKey = key;
   supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { "x-bead-sync-key": key } } });
   try { localStorage.setItem(SYNC_KEY_STORAGE, key); } catch(e) {}

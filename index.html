@@ -278,6 +278,7 @@
 <div class="hist-drawer" id="patDrawer">
   <div class="hist-head">
     <h3>图纸库</h3>
+    <button type="button" class="ghost" id="syncPatternsBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">同步图库</button>
     <button type="button" class="ghost" id="patCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
   </div>
   <div class="hist-body" id="patBody"></div>
@@ -1678,6 +1679,24 @@ async function cloudSavePatterns() {
   for (const pat of patternLib) await cloudSavePattern(pat);
 }
 
+async function syncPatternLibraryManual() {
+  if (!syncKey || !supabaseClient) { alert("请先连接同步密钥，再同步图库。"); return; }
+  const btn = document.getElementById("syncPatternsBtn");
+  btn.disabled = true; btn.textContent = "同步中…";
+  setSyncStatus("syncing", "图库同步中…");
+  try {
+    await cloudSavePatterns();
+    setSyncStatus("ok", "图库已保存到云端");
+    btn.textContent = "已同步 ✓";
+    setTimeout(() => { btn.textContent = "同步图库"; }, 1800);
+  } catch (e) {
+    reportPatternCloudError(e);
+    btn.textContent = "同步失败";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function cloudLoadPatterns() {
   if (!syncKey || !supabaseClient) return;
   const { data, error } = await supabaseClient.from("bead_patterns").select("*").order("created_at", { ascending: false });
@@ -1773,6 +1792,7 @@ document.getElementById("histBackdrop").addEventListener("click", closeHistoryDr
 document.getElementById("patLibBtn").addEventListener("click", openPatternDrawer);
 document.getElementById("patCloseBtn").addEventListener("click", closePatternDrawer);
 document.getElementById("patBackdrop").addEventListener("click", closePatternDrawer);
+document.getElementById("syncPatternsBtn").addEventListener("click", syncPatternLibraryManual);
 document.getElementById("patternImageInput").addEventListener("change", e => {
   attachPatternImage(e.target.files[0], patternImageTarget);
   patternImageTarget = null;

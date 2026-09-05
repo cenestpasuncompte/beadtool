@@ -265,6 +265,15 @@
     <button type="button" class="ghost" id="purchaseCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
   </div>
   <div class="hist-body" id="purchaseBody"></div>
+  <div id="purchaseSummary" style="padding:10px 12px;border-top:1px solid var(--line);flex-shrink:0;font-size:13px;font-weight:700"></div>
+  <div style="padding:0 12px 12px;flex-shrink:0">
+    <button id="calcPurchasePriceBtn" type="button" class="ghost" style="margin:0">计算价格</button>
+    <div id="purchasePricePanel" hidden style="margin-top:8px">
+      <label for="purchasePackPrice" style="margin-top:0">每包单价</label>
+      <div class="row"><input id="purchasePackPrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例如 8.5" /><button id="confirmPurchasePriceBtn" type="button">计算</button></div>
+      <div id="purchasePriceResult" class="feedback ok"></div>
+    </div>
+  </div>
 </div>
 
 <div class="hist-backdrop" id="histBackdrop"></div>
@@ -280,6 +289,7 @@
 <div class="hist-drawer" id="patDrawer">
   <div class="hist-head">
     <h3>图纸库</h3>
+    <button type="button" class="ghost" id="selectAllPatternsBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">全选</button>
     <button type="button" class="ghost" id="syncPatternsBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">同步图库</button>
     <button type="button" class="ghost" id="patCloseBtn" style="margin:0;padding:6px 12px;font-size:13px;min-height:32px">关闭</button>
   </div>
@@ -303,6 +313,26 @@
       <button type="button" class="ghost" id="imageNextBtn">下一张</button>
     </div>
     <div class="image-scroller"><img id="imageModalImg" alt="图纸大图；点击可放大或缩小" /></div>
+  </div>
+</div>
+
+<div id="editPatternModal" class="modal-overlay" hidden>
+  <div class="modal" style="max-width:480px">
+    <h3>编辑图纸</h3>
+    <label for="editPatternName">图纸名称</label>
+    <input id="editPatternName" placeholder="例如：机车小猫" />
+    <label for="editPatternNeeds">色号与数量</label>
+    <textarea id="editPatternNeeds" class="mono" placeholder="例如：H7 20&#10;H6 15&#10;F8 (30)" style="min-height:180px"></textarea>
+    <p style="margin:8px 0 0;font-size:12px">每行一个色号；支持 H7 20、H7 (20) 或 H7:20。</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+      <button type="button" class="ghost" id="editPatternReplaceImageBtn">更换图纸</button>
+      <button type="button" class="ghost" id="editPatternAddImageBtn">添加分图</button>
+      <button type="button" class="ghost" id="editPatternDeleteBtn" style="color:var(--bad)">删除图纸</button>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button type="button" class="ghost" id="editPatternCancelBtn">取消</button>
+      <button type="button" id="editPatternSaveBtn">保存修改</button>
+    </div>
   </div>
 </div>
 
@@ -587,9 +617,11 @@ let openImageObjectUrl = null;
 let openPattern = null;
 let openPatternImageIndex = 1;
 let selectedPatternIds = new Set();
+let editingPatternId = null;
 let inventoryEventQueue = JSON.parse(storageLoad(INVENTORY_EVENTS_KEY, "[]"));
 let inventoryDirty = inventoryEventQueue.length > 0;
 let batchPurchaseText = null;
+let currentPurchasePacks = 0;
 
 function normalize(s) {
   return String(s).trim().replace(/\s+/g, "").toUpperCase();
@@ -988,24 +1020,9 @@ function renderPatternLib() {
       previewBtn.addEventListener("click", () => openPatternImage(pat));
       actions.appendChild(previewBtn);
     }
-    const imageBtn = document.createElement("button");
-    imageBtn.type = "button"; imageBtn.className = "ghost";
-    imageBtn.textContent = pat.image ? "更换图纸" : "上传图纸";
-    imageBtn.addEventListener("click", () => choosePatternImage(pat.id));
-    actions.appendChild(imageBtn);
-    if (pat.image) {
-      const splitBtn = document.createElement("button");
-      splitBtn.type = "button"; splitBtn.className = "ghost"; splitBtn.textContent = "添加分图";
-      splitBtn.addEventListener("click", () => choosePatternImage(pat.id, true));
-      actions.appendChild(splitBtn);
-    }
-    const delBtn = document.createElement("button");
-    delBtn.type = "button"; delBtn.className = "ghost"; delBtn.textContent = "删除";
-    delBtn.addEventListener("click", () => deletePattern(pat.id));
-    actions.appendChild(delBtn);
     const editBtn = document.createElement("button");
-    editBtn.type = "button"; editBtn.className = "ghost"; editBtn.textContent = "改标题";
-    editBtn.addEventListener("click", () => editPatternName(pat.id));
+    editBtn.type = "button"; editBtn.className = "ghost"; editBtn.textContent = "编辑图纸";
+    editBtn.addEventListener("click", () => openEditPatternModal(pat.id));
     actions.appendChild(editBtn);
     content.appendChild(actions);
     card.appendChild(cb);
@@ -1049,16 +1066,50 @@ function deletePattern(id) {
   updatePatternSelectionUI();
 }
 
-function editPatternName(id) {
+function openEditPatternModal(id) {
   const pat = patternLib.find(p => p.id === id);
   if (!pat) return;
-  const name = prompt("修改图纸名称：", pat.name)?.trim();
-  if (!name || name === pat.name) return;
+  editingPatternId = id;
+  document.getElementById("editPatternName").value = pat.name;
+  document.getElementById("editPatternNeeds").value = (pat.items || []).map(i => `${i.code} ${i.count}`).join("\n");
+  document.getElementById("editPatternModal").removeAttribute("hidden");
+}
+
+function closeEditPatternModal() {
+  editingPatternId = null;
+  document.getElementById("editPatternModal").setAttribute("hidden", "");
+}
+
+function savePatternEdits() {
+  const pat = patternLib.find(p => p.id === editingPatternId);
+  if (!pat) return;
+  const name = document.getElementById("editPatternName").value.trim();
+  const source = document.getElementById("editPatternNeeds").value.trim();
+  if (!name) { alert("请填写图纸名称。"); return; }
+  const { items } = parseCodesWithCounts(source);
+  if (source && (!items.length || items.some(i => i.count == null))) {
+    alert("请为每个色号填写数量，例如 H7 20。"); return;
+  }
   pat.name = name;
+  pat.items = items;
+  pat.updatedAt = new Date().toISOString();
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   pat.cloudDirty = true;
   storageSave(PATTERN_KEY, JSON.stringify(patternLib));
   renderPatternLib();
+  closeEditPatternModal();
+}
+
+function editPatternImage(append) {
+  if (!editingPatternId) return;
+  choosePatternImage(editingPatternId, append);
+}
+
+function deletePatternFromEditor() {
+  if (!editingPatternId) return;
+  const id = editingPatternId;
+  closeEditPatternModal();
+  deletePattern(id);
 }
 
 async function openPatternImage(pat, index = 1) {
@@ -1199,6 +1250,19 @@ function updatePatternSelectionUI() {
   const count = selectedPatternIds.size;
   btn.disabled = count === 0;
   btn.textContent = count ? `生成清单（${count}）` : "生成清单";
+  const allBtn = document.getElementById("selectAllPatternsBtn");
+  allBtn.disabled = patternLib.length === 0;
+  allBtn.textContent = patternLib.length && count === patternLib.length ? "取消全选" : "全选";
+}
+
+function toggleSelectAllPatterns() {
+  if (selectedPatternIds.size === patternLib.length && patternLib.length) {
+    selectedPatternIds.clear();
+  } else {
+    selectedPatternIds = new Set(patternLib.map(p => p.id));
+  }
+  renderPatternLib();
+  updatePatternSelectionUI();
 }
 
 function generateBatchPurchase() {
@@ -1218,11 +1282,19 @@ function generateBatchPurchase() {
   });
   lines.sort((a, b) => a.code.localeCompare(b.code, "zh-Hans-CN", { numeric: true }));
   const body = document.getElementById("purchaseBody");
+  const summary = document.getElementById("purchaseSummary");
+  const priceBtn = document.getElementById("calcPurchasePriceBtn");
+  const pricePanel = document.getElementById("purchasePricePanel");
+  pricePanel.hidden = true;
+  document.getElementById("purchasePriceResult").textContent = "";
   body.innerHTML = "";
   if (!lines.length) {
     const el = document.createElement("div"); el.className = "hist-empty"; el.textContent = "库存充足，无需采购。";
     body.appendChild(el);
     batchPurchaseText = "库存充足，无需采购。";
+    currentPurchasePacks = 0;
+    summary.textContent = "合计：无需购买";
+    priceBtn.disabled = true;
   } else {
     const list = document.createElement("div"); list.style.background = "#fffaf5";
     lines.forEach(({ code, needed, have, shortage, packs }) => {
@@ -1235,13 +1307,29 @@ function generateBatchPurchase() {
       list.appendChild(item);
     });
     body.appendChild(list);
+    currentPurchasePacks = lines.reduce((sum, line) => sum + line.packs, 0);
+    summary.textContent = `合计购买 ${lines.length} 色 · ${currentPurchasePacks} 包`;
+    priceBtn.disabled = false;
     batchPurchaseText = lines.map(({ code, needed, have, shortage, packs }) =>
       `${code}：总需求 ${needed} 粒，库存 ${have} 粒，缺 ${shortage} 粒，建议购买 ${packs} 包`
-    ).join("\n");
+    ).join("\n") + `\n合计：${lines.length} 色 · ${currentPurchasePacks} 包`;
   }
   closePatternDrawer();
   document.getElementById("purchaseDrawer").classList.add("open");
   document.getElementById("purchaseBackdrop").classList.add("open");
+}
+
+function openPurchasePriceCalculator() {
+  document.getElementById("purchasePricePanel").hidden = false;
+  document.getElementById("purchasePackPrice").focus();
+}
+
+function calculatePurchasePrice() {
+  const price = Number(document.getElementById("purchasePackPrice").value);
+  const result = document.getElementById("purchasePriceResult");
+  if (!Number.isFinite(price) || price < 0) { result.textContent = "请输入有效单价。"; result.className = "feedback bad"; return; }
+  result.textContent = `预计花费：¥${(price * currentPurchasePacks).toFixed(2)}`;
+  result.className = "feedback ok";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1884,10 +1972,20 @@ document.getElementById("editModal").addEventListener("click", e => { if (e.targ
 document.getElementById("editPacks").addEventListener("input", updateEditCalc);
 document.getElementById("editLoose").addEventListener("input", updateEditCalc);
 
+// Pattern edit modal
+document.getElementById("editPatternCancelBtn").addEventListener("click", closeEditPatternModal);
+document.getElementById("editPatternSaveBtn").addEventListener("click", savePatternEdits);
+document.getElementById("editPatternReplaceImageBtn").addEventListener("click", () => editPatternImage(false));
+document.getElementById("editPatternAddImageBtn").addEventListener("click", () => editPatternImage(true));
+document.getElementById("editPatternDeleteBtn").addEventListener("click", deletePatternFromEditor);
+document.getElementById("editPatternModal").addEventListener("click", e => { if (e.target === e.currentTarget) closeEditPatternModal(); });
+
 // Purchase drawer
 document.getElementById("purchaseCloseBtn").addEventListener("click", closePurchaseDrawer);
 document.getElementById("purchaseBackdrop").addEventListener("click", closePurchaseDrawer);
 document.getElementById("copyPurchaseBtn").addEventListener("click", copyPurchaseList);
+document.getElementById("calcPurchasePriceBtn").addEventListener("click", openPurchasePriceCalculator);
+document.getElementById("confirmPurchasePriceBtn").addEventListener("click", calculatePurchasePrice);
 
 // History drawer
 document.getElementById("histBtn").addEventListener("click", openHistoryDrawer);
@@ -1896,6 +1994,7 @@ document.getElementById("histBackdrop").addEventListener("click", closeHistoryDr
 document.getElementById("patLibBtn").addEventListener("click", openPatternDrawer);
 document.getElementById("patCloseBtn").addEventListener("click", closePatternDrawer);
 document.getElementById("patBackdrop").addEventListener("click", closePatternDrawer);
+document.getElementById("selectAllPatternsBtn").addEventListener("click", toggleSelectAllPatterns);
 document.getElementById("syncPatternsBtn").addEventListener("click", syncPatternLibraryManual);
 document.getElementById("syncInventoryBtn").addEventListener("click", () => syncInventoryManual().catch(e => setInventoryStatus("error", `同步失败：${e.message || "未知错误"}`)));
 document.getElementById("patternImageInput").addEventListener("change", e => {
